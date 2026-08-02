@@ -8,6 +8,7 @@ import pytest
 from bioage.biomarkers.parsers.daily import (
     parse_daily_heart_rate_variability,
     parse_daily_oxygen_saturation,
+    parse_daily_respiratory_rate,
     parse_daily_resting_heart_rate,
     parse_daily_sleep_temperature_derivations,
 )
@@ -49,6 +50,19 @@ def test_oxygen_saturation_uses_the_average_percentage() -> None:
     parsed = parse_daily_oxygen_saturation(point)
     assert parsed is not None
     assert parsed.values["spo2_pct"] == pytest.approx(96.4)
+
+
+def test_respiratory_rate_uses_the_breaths_per_minute_double() -> None:
+    point = load("daily_respiratory_rate")["dataPoints"][0]
+    parsed = parse_daily_respiratory_rate(point)
+    assert parsed is not None
+    assert parsed.day == date(2026, 6, 1)
+    assert parsed.values["respiratory_rate_brpm"] == pytest.approx(14.8)
+
+
+def test_respiratory_rate_returns_none_when_breaths_per_minute_is_missing() -> None:
+    point = {"dailyRespiratoryRate": {"date": {"year": 2026, "month": 6, "day": 1}}}
+    assert parse_daily_respiratory_rate(point) is None
 
 
 def test_steps_coerces_the_string_count_and_dates_by_interval_start() -> None:
@@ -119,6 +133,7 @@ def test_weight_accepts_the_alternative_grams_encoding() -> None:
     [
         parse_daily_resting_heart_rate,
         parse_daily_heart_rate_variability,
+        parse_daily_respiratory_rate,
         parse_daily_oxygen_saturation,
         parse_steps,
         parse_weight,
