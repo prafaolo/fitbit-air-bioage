@@ -123,3 +123,15 @@ class KdmConstants(Cited):
 @lru_cache
 def get_kdm() -> KdmConstants:
     return KdmConstants(**load_yaml("kdm_biomarkers"))
+
+
+class CompositeConstants(Cited):
+    z_score: float
+    sigma_multipliers: dict[str, float]
+    low_confidence_sigma_multiplier: float
+    min_components: int
+
+
+@lru_cache
+def get_composite() -> CompositeConstants:
+    return CompositeConstants(**load_yaml("composite"))
