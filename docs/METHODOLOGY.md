@@ -47,13 +47,6 @@ months, not for diagnosing a Tuesday.
 | Steps (daily count) | `steps` | NTNU physical-activity index, step-count mortality age, KDM |
 | Sleep efficiency, derived (see §6.5) | `sleep` | KDM |
 
-### Trend-only signals (surfaced in the UI, never fed into an age estimator)
-
-| Signal | Source | Why trend-only |
-|---|---|---|
-| SpO₂ (average daily) | `daily-oxygen-saturation` | Deliberately excluded as an age component; too dependent on altitude, device fit, and short-term illness to anchor an age estimate. Shown as context only. |
-| Skin temperature delta | `daily-sleep-temperature-derivations` | Meaningful only as a multi-week deviation from personal baseline, not as an absolute value with an age relationship. |
-
 Respiratory rate (`daily-respiratory-rate`) and Active Zone Minutes
 (`active-zone-minutes`) are also ingested. Respiratory rate is carried in the feature
 vector but not consumed by any estimator today. Active Zone Minutes feeds only the NTNU
@@ -61,9 +54,16 @@ physical-activity index as an intensity bonus (§6.1).
 
 ### Computed but not yet consumed
 
+Ingested and parsed into `daily_metrics`, but not fed into any age estimator, and not
+currently surfaced anywhere in the frontend either — dormant, not "trend-only display"
+signals, despite each having a good reason (noted below) *why* an estimator doesn't use
+it directly.
+
 | Signal | Source | Status |
 |---|---|---|
-| Sleep regularity (circular SD of sleep midpoints, minutes) | derived from `sleep` (§6.5) | Computed by `regularity.py` and stored on every `BiomarkerVector`, but no estimator reads it and it is not surfaced in the frontend today. It is neither a primary input nor a trend-only display signal — it is dormant. |
+| SpO₂ (average daily) | `daily-oxygen-saturation` | Deliberately excluded as an age component — too dependent on altitude, device fit, and short-term illness to anchor an age estimate. Not surfaced in the UI: `DailyMetricOut` (`backend/src/bioage/api/schemas.py`) does not expose it, and no frontend page calls `GET /api/daily-metrics`. |
+| Skin temperature delta | `daily-sleep-temperature-derivations` | Meaningful only as a multi-week deviation from personal baseline, not as an absolute value with an age relationship. Same gap as SpO₂: not in `DailyMetricOut`, not called from the frontend. |
+| Sleep regularity (circular SD of sleep midpoints, minutes) | derived from `sleep` (§6.5) | Computed by `regularity.py` and stored on every `BiomarkerVector`, but no estimator reads it and it is not surfaced in the frontend today. |
 
 ### Query-range cap
 
@@ -416,6 +416,70 @@ estimators produced a result for a given week (e.g., missing waist circumference
 few HRV nights), `combine()` returns `None` and no composite is scored for that week —
 because a single estimator dressed up as a multi-method consensus would misrepresent its
 own uncertainty.
+
+### 5.1 The composite's chronological-age sensitivity
+
+**This is the single most important number for a skeptical reader interpreting the
+chart's slope, and it was recomputed directly from the shipped constants for this
+document rather than trusted from an earlier draft.**
+
+Two of the four component estimators are literally `chronological_age + offset`:
+
+- **NTNU fitness age** (§4.1): `fitness_age = (VO2max(CA, other inputs) − baseline) /
+  age_coef`, and `VO2max` is linear in `CA` with coefficient `age_coef` — so
+  `d(fitness_age)/d(CA) = age_coef / age_coef = 1` exactly, holding every other input
+  (waist, resting HR, physical activity) fixed.
+- **Step-count mortality age** (§4.3): `age = CA + ln(hazard_ratio)/ln(2) · mrdt_years`,
+  and `hazard_ratio` depends only on steps, never on `CA` — so
+  `d(steps_age)/d(CA) = 1` exactly.
+- **HRV-norm age** (§4.2) depends only on measured RMSSD, never on `CA` —
+  `d(hrv_age)/d(CA) = 0`. This is the *only* component that carries information about
+  age independent of the birthdate the user typed into the Profile page.
+- **KDM** (§4.4) blends a biomarker-only estimate with the chronological-age anchor
+  term; `d(BA_EC)/d(CA)` is exactly the anchor's *share* of the total Fisher
+  information, `(1/s_BA²) / (Σ_j k_j²/s_j² + 1/s_BA²)`. With all five biomarkers
+  present this is the **≈69.5%** figure already derived in §4.4.
+
+The composite is an inverse-variance-weighted average of these four, and the weights
+(each component's own multiplier-scaled σ) do not depend on `CA` — so the composite's
+own sensitivity is the same weighted average of the four components' individual
+sensitivities above:
+
+```
+d(composite)/d(CA) = Σ_i[ w_i · d(age_i)/d(CA) ] / Σ_i w_i,   w_i = 1 / (σ_i · multiplier_i)²
+```
+
+Using the shipped constants (σ = 5.9, 7.0, 8.0, 9.17 years for ntnu_fitness, hrv_norm,
+steps_mortality, kdm respectively — the KDM figure is its all-five-biomarker σ from
+§4.4 — and the composite.yaml multipliers 1.0, 1.3, 1.1, 1.0):
+
+| Component | σ (years) | multiplier | effective σ | weight = 1/σ_eff² | d(age)/d(CA) |
+|---|---|---|---|---|---|
+| ntnu_fitness | 5.9 | 1.0 | 5.9 | 0.02873 | 1.0 |
+| hrv_norm | 7.0 | 1.3 | 9.1 | 0.01208 | 0.0 |
+| steps_mortality | 8.0 | 1.1 | 8.8 | 0.01291 | 1.0 |
+| kdm | 9.17 | 1.0 | 9.17 | 0.01189 | 0.695 |
+
+`Σ w_i = 0.06561`; `Σ w_i · d(age_i)/d(CA) = (0.02873×1) + (0.01208×0) + (0.01291×1) +
+(0.01189×0.695) = 0.04991`.
+
+**`d(composite)/d(CA) = 0.04991 / 0.06561 ≈ 0.76`.** This was cross-checked by
+numerically differentiating the actual `estimate_all()` code at a representative
+profile with every biomarker present (central difference, h = 1e-4 years, all four
+components running), which reproduces **0.76066** — matching the hand calculation above
+to four decimal places.
+
+**What this means:** the composite rises roughly **three-quarters of a year per
+calendar year purely by construction** — not because the user's fitness or physiology is
+declining, but because two of the four components are chronological age plus a bounded
+offset, and the fourth (KDM) is majority-weighted toward chronological age by its own
+`s_BA` anchor (§4.4, §6.2). Only HRV age (0% sensitivity) carries information genuinely
+independent of the birthdate entered on the Profile page. Read the chart's *slope*
+skeptically, not just its level: a line climbing at roughly 0.76 years per calendar
+year — tracking the passage of time almost one-for-one — is close to what this model
+produces by construction even with no real change in fitness or physiology, not evidence
+of aging. A materially different slope — flatter (improvements outrunning the built-in
+drift) or steeper (decline outrunning it) — is the signal actually worth attending to.
 
 ## 6. Known approximations
 
