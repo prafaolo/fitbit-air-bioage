@@ -27,7 +27,6 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
     "types-pyyaml>=6.0",
-    "httpx2>=2.9.1",
 ]
 
 [build-system]
@@ -41,6 +40,17 @@ packages = ["src/bioage"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 asyncio_mode = "auto"
+filterwarnings = [
+    # starlette.testclient (used by fastapi.testclient.TestClient) prefers an optional
+    # "httpx2" package as its internal request transport and falls back to `httpx` with
+    # this deprecation warning when it isn't installed. It's an upstream implementation
+    # detail of how TestClient drives requests through the ASGI app in-process; it has
+    # no bearing on this project's own HTTP usage (bioage.ingest.* and the OAuth routes
+    # use `httpx` throughout, unaffected by which transport TestClient picks). Scoped
+    # narrowly to this one message + category so any other StarletteDeprecationWarning
+    # still surfaces.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead\\.:starlette.exceptions.StarletteDeprecationWarning",
+]
 
 [tool.ruff]
 line-length = 100

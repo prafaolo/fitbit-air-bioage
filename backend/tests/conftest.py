@@ -34,6 +34,22 @@ TEST_DATABASE_URL = os.environ.get(
 )
 
 
+@pytest.fixture(autouse=True)
+def _settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make `bioage.config.get_settings()` constructible with no `.env` file present.
+
+    `create_app()` (task 23) is the first code path exercised by the test suite that
+    calls `get_settings()` outside of `cli.py`, and `Settings.database_url` has no
+    default -- without this, `uv run pytest` fails before a single test runs on a
+    fresh clone. `DATABASE_URL` is set to the same value the `engine` fixture uses, so
+    a test that accidentally bypassed the `get_session` override would hit the same
+    scratch database rather than a stray production one. Google credentials are left
+    unset so the `/api/auth/google/start` 503-without-credentials test still passes.
+    """
+    monkeypatch.setenv("DATABASE_URL", TEST_DATABASE_URL)
+    monkeypatch.setenv("FRONTEND_ORIGIN", "http://localhost:5173")
+
+
 @pytest.fixture(scope="session")
 def engine():
     admin_url = TEST_DATABASE_URL.rsplit("/", 1)[0] + "/postgres"

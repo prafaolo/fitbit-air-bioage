@@ -7,7 +7,7 @@ module itself (`bioage.ingest.oauth`) without any state handling and deliberatel
 validation to this task; `/start` generates and stores the state it issues, `/callback`
 requires it back and consumes it on first use.
 
-`_OAuthStateStore` is a plain in-process dict, not a database table or a dependency on a
+`OAuthStateStore` is a plain in-process dict, not a database table or a dependency on a
 cache service: state tokens live for minutes, only matter within a single OAuth round
 trip, and this app is single-user and single-process, so there is nothing to share across
 requests other than process memory. A restart mid-flow simply forces the user to click
@@ -46,6 +46,7 @@ class OAuthStateStore:
         self._issued: dict[str, datetime] = {}
 
     def issue(self) -> str:
+        self._prune_expired()
         token = secrets.token_urlsafe(16)
         self._issued[token] = datetime.now(UTC)
         return token
@@ -62,6 +63,16 @@ class OAuthStateStore:
             return False
         moment = now or datetime.now(UTC)
         return moment - issued_at <= self._ttl
+
+    def _prune_expired(self, now: datetime | None = None) -> None:
+        """Opportunistic cleanup so abandoned /start calls (never followed by a
+        /callback) don't leak entries for the lifetime of the process."""
+        moment = now or datetime.now(UTC)
+        expired = [
+            token for token, issued_at in self._issued.items() if moment - issued_at > self._ttl
+        ]
+        for token in expired:
+            del self._issued[token]
 
 
 # Module-level singleton: the app is single-process, and routes need a shared store
@@ -90,6 +101,11 @@ def callback(
     http: httpx.Client = Depends(get_http_client),
 ) -> RedirectResponse:
     if error:
+        # Google still returns the state we issued even on a denial/error redirect;
+        # consume it here too so it isn't left sitting around, replayable, until it
+        # expires on its own.
+        if state:
+            oauth_state_store.consume(state)
         raise HTTPException(status_code=400, detail=f"Google returned an error: {error}")
     if not state:
         raise HTTPException(status_code=400, detail="Missing state parameter")

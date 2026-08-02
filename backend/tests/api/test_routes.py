@@ -10,6 +10,8 @@ from bioage.api.deps import get_session
 from bioage.api.routes_auth import oauth_state_store
 from bioage.db.models import OAuthCredential
 from bioage.demo.generator import seed_demo
+from bioage.ingest.client import BASE_URL as HEALTH_API_BASE_URL
+from bioage.ingest.registry import DATA_TYPES
 
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 
@@ -157,6 +159,37 @@ def test_sync_returns_409_when_not_connected(client):
     assert client.post("/api/sync").status_code == 409
 
 
+@respx.mock
+def test_sync_succeeds_when_connected_and_reports_parse_errors_per_type(client, db):
+    """The only prior sync test covered the 409 path; this covers the success response
+    shape, in particular `parse_errors` -- the field this task was specifically asked
+    to add to the response -- so renaming or dropping it would fail a test."""
+    db.add(
+        OAuthCredential(
+            id=1,
+            refresh_token="rt",
+            access_token="still-valid",
+            token_expiry=datetime.now(UTC) + timedelta(hours=1),
+            scopes=[],
+        )
+    )
+    db.flush()
+    respx.get(url__startswith=f"{HEALTH_API_BASE_URL}/users/me/dataTypes/").mock(
+        return_value=httpx.Response(200, json={"dataPoints": []})
+    )
+
+    response = client.post("/api/sync")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "weeks_scored" in body
+    assert {r["data_type"] for r in body["reports"]} == {s.data_type_id for s in DATA_TYPES}
+    for report in body["reports"]:
+        assert report.keys() == {"data_type", "days_written", "error", "parse_errors"}
+        assert report["parse_errors"] == 0
+        assert report["error"] is None
+
+
 def test_auth_start_returns_503_without_google_credentials(client):
     assert client.get("/api/auth/google/start", follow_redirects=False).status_code == 503
 
@@ -191,10 +224,16 @@ def test_auth_callback_rejects_an_unknown_state(client):
 
 def test_auth_callback_rejects_an_expired_state(client):
     state = oauth_state_store.issue()
-    far_future = datetime.now(UTC) + timedelta(hours=1)
-    # Simulate the TTL having elapsed by asking consume() to evaluate against a moment
-    # long after issuance, without sleeping the test.
-    assert oauth_state_store.consume(state, now=far_future) is False
+    # Backdate the issuance past the TTL so the callback sees it as expired, without
+    # sleeping the test. Reaching into the store's internal dict is test-only; the
+    # store exposes no other way to age an entry.
+    oauth_state_store._issued[state] = datetime.now(UTC) - timedelta(hours=1)
+
+    response = client.get(
+        f"/api/auth/google/callback?state={state}&code=some-code", follow_redirects=False
+    )
+
+    assert response.status_code == 400
 
 
 def test_auth_callback_rejects_a_replayed_state(client):
