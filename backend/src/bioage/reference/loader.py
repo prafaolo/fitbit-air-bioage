@@ -59,3 +59,16 @@ class NtnuConstants(Cited):
 @lru_cache
 def get_ntnu() -> NtnuConstants:
     return NtnuConstants(**load_yaml("ntnu"))
+
+
+class PaIndexConstants(Cited):
+    steps_knots: list[tuple[float, float]]
+    azm_knots: list[tuple[float, float]]
+    index_ceiling: float
+    fallback_index: float
+    fitness_age_sigma_years: float
+
+
+@lru_cache
+def get_pa_index() -> PaIndexConstants:
+    return PaIndexConstants(**load_yaml("pa_index"))

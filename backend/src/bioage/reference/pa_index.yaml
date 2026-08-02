@@ -1,0 +1,39 @@
+source: >-
+  APPROXIMATION. The HUNT physical activity index is a questionnaire score combining
+  frequency, duration and intensity of exercise (Nes et al. 2011). No published mapping
+  from step counts to that index exists. These knots were chosen so that sedentary
+  (<4,000 steps/day) maps near the bottom of the scale, the population-typical 7,000-8,000
+  steps/day maps to the reference value of 5.0 used in ntnu.yaml, and highly active
+  (>15,000 steps/day) approaches the ceiling. Active Zone Minutes add an intensity bonus
+  because the HUNT index weights intensity, which steps alone cannot express.
+derived: true
+
+# Piecewise-linear knots: mean daily steps -> base index
+steps_knots:
+  - [0, 0.0]
+  - [2000, 1.0]
+  - [4000, 2.5]
+  - [6000, 4.0]
+  - [7500, 5.0]
+  - [10000, 6.5]
+  - [12500, 7.5]
+  - [15000, 8.5]
+  - [20000, 10.0]
+
+# Intensity bonus: mean daily Active Zone Minutes -> index added to the base
+azm_knots:
+  - [0, 0.0]
+  - [10, 0.5]
+  - [22, 1.5]
+  - [45, 3.0]
+  - [90, 4.5]
+
+index_ceiling: 15.0
+
+# Used when neither steps nor AZM are available for the window.
+fallback_index: 5.0
+
+# Standard error of the resulting fitness age, in years. The HUNT VO2max equation has
+# SEE 3.5 mL/kg/min; dividing by the male age coefficient (0.296 mL/kg/min per year)
+# gives ~11.8 years, which is then treated as a 2-sigma spread.
+fitness_age_sigma_years: 5.9
