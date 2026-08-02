@@ -22,6 +22,10 @@ function isNotFound(error: unknown): boolean {
 export function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Starts true so the first render doesn't assert "No profile set up yet"
+  // (profile is still null at that point) for a user who does have one —
+  // that copy is only trustworthy once the initial fetch has resolved.
+  const [loading, setLoading] = useState(true);
   const [sex, setSex] = useState<Profile["sex"]>("male");
   const [birthdate, setBirthdate] = useState("");
   const [kind, setKind] = useState<Measurement["kind"]>("waist_cm");
@@ -43,6 +47,8 @@ export function ProfilePage() {
       } else {
         setLoadError((e as Error).message);
       }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -92,9 +98,16 @@ export function ProfilePage() {
         measurement was current as of that week.
       </p>
 
-      {loadError && <p className="error">Could not load profile: {loadError}</p>}
-      {!profile && !loadError && (
-        <p className="muted">No profile set up yet — enter your sex and birthdate below to get started.</p>
+      {loading ? (
+        <p className="muted">Loading profile…</p>
+      ) : loadError ? (
+        <p className="error">Could not load profile: {loadError}</p>
+      ) : (
+        !profile && (
+          <p className="muted">
+            No profile set up yet — enter your sex and birthdate below to get started.
+          </p>
+        )
       )}
 
       <h2>Identity</h2>

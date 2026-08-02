@@ -7,6 +7,12 @@ import { CoverageTable } from "../components/CoverageTable";
 export function Connection() {
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
+  // Starts true so the first render — before getSyncStatus() has resolved —
+  // shows a neutral "checking" state instead of asserting "Not connected"
+  // (status still null at that point) for a user who may in fact be
+  // connected. This page exists to be trusted as ground truth about setup,
+  // so it must not assert either state before it actually knows.
+  const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<SyncTriggerResult | null>(null);
@@ -19,6 +25,8 @@ export function Connection() {
     } catch (e) {
       setStatus(null);
       setStatusError((e as Error).message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -54,9 +62,11 @@ export function Connection() {
     <section>
       <h1>Connection</h1>
 
-      {statusError && <p className="error">Could not load connection status: {statusError}</p>}
-
-      {status?.connected ? (
+      {loading ? (
+        <p className="muted">Checking connection…</p>
+      ) : statusError ? (
+        <p className="error">Could not load connection status: {statusError}</p>
+      ) : status?.connected ? (
         <p>Connected to Google Health.</p>
       ) : (
         <p>
@@ -65,7 +75,7 @@ export function Connection() {
         </p>
       )}
 
-      <button onClick={() => void sync()} disabled={!status?.connected || syncing}>
+      <button onClick={() => void sync()} disabled={loading || !status?.connected || syncing}>
         {syncing ? "Syncing…" : "Sync now"}
       </button>
       {message && <p className="muted">{message}</p>}
@@ -92,7 +102,11 @@ export function Connection() {
         The Fitbit Air derives VO<sub>2</sub>max only from GPS-tracked runs, so{" "}
         <code>daily-vo2-max</code> is expected to stay empty rather than indicate a problem.
       </p>
-      <CoverageTable rows={status?.data_types ?? []} />
+      {loading ? (
+        <p className="muted">Loading coverage…</p>
+      ) : (
+        <CoverageTable rows={status?.data_types ?? []} />
+      )}
     </section>
   );
 }
