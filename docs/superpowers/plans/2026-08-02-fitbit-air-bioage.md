@@ -5338,9 +5338,9 @@ def test_two_hundred_day_backfill_is_split_into_three_requests():
         return_value=httpx.Response(200, json={"dataPoints": []})
     )
     make_client().list_data_points(
-        get_spec("steps"), DateRange(date(2026, 1, 1), date(2026, 3, 2))
+        get_spec("steps"), DateRange(date(2026, 1, 1), date(2026, 7, 20))
     )
-    assert route.call_count == 5
+    assert route.call_count == 3
 
 
 @respx.mock
