@@ -27,6 +27,7 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
     "types-pyyaml>=6.0",
+    "httpx2>=2.9.1",
 ]
 
 [build-system]
@@ -47,6 +48,11 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's Depends(...)-as-default is the framework's documented dependency-injection
+# idiom, not the mutable-default-argument footgun B008 exists to catch.
+extend-immutable-calls = ["fastapi.Depends"]
 
 [[tool.mypy.overrides]]
 module = "bioage.estimators.*,bioage.biomarkers.*,bioage.reference.*"
