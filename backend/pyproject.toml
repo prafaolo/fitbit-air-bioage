@@ -16,7 +16,6 @@ dependencies = [
     "google-auth>=2.35",
     "google-auth-oauthlib>=1.2",
     "apscheduler>=3.10",
-    "numpy>=2.1",
 ]
 
 [dependency-groups]
@@ -27,6 +26,12 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
     "types-pyyaml>=6.0",
+    # Used only by bioage.reference.regenerate_kdm, an offline audit/regeneration
+    # script (run via `uv run python -m bioage.reference.regenerate_kdm`) and by its
+    # guard test (tests/estimators/test_kdm_regeneration.py) -- never imported by any
+    # runtime request path, so it belongs with the dev tooling, not the app's runtime
+    # dependencies.
+    "numpy>=2.1",
 ]
 
 [build-system]

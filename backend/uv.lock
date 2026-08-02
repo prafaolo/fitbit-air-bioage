@@ -115,7 +115,6 @@ dependencies = [
     { name = "google-auth" },
     { name = "google-auth-oauthlib" },
     { name = "httpx" },
-    { name = "numpy" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -128,6 +127,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "mypy" },
+    { name = "numpy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "respx" },
@@ -143,7 +143,6 @@ requires-dist = [
     { name = "google-auth", specifier = ">=2.35" },
     { name = "google-auth-oauthlib", specifier = ">=1.2" },
     { name = "httpx", specifier = ">=0.27" },
-    { name = "numpy", specifier = ">=2.1" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "pydantic-settings", specifier = ">=2.6" },
@@ -156,6 +155,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "mypy", specifier = ">=1.13" },
+    { name = "numpy", specifier = ">=2.1" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
     { name = "respx", specifier = ">=0.21" },
