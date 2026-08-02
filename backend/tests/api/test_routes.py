@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import httpx
 import pytest
@@ -153,6 +153,25 @@ def test_sync_status_lists_vo2max_as_expected_empty(client):
     body = client.get("/api/sync/status").json()
     vo2 = next(d for d in body["data_types"] if d["data_type"] == "daily-vo2-max")
     assert vo2["expected_empty"] is True
+
+
+def test_sync_status_reports_real_points_stored_for_an_expected_empty_type(client, db):
+    """points_stored must reflect the raw archive, not be structurally pinned at 0 --
+    otherwise the coverage table's "expected empty" copy would be a hardcoded answer,
+    not an observation, even if Google started populating this data type tomorrow."""
+    from bioage.db.models import RawDataPoint
+
+    db.add(RawDataPoint(
+        data_type="daily-vo2-max",
+        point_date=date(2026, 6, 1),
+        payload={"dailyVo2Max": {}},
+        payload_hash="test-hash",
+    ))
+    db.flush()
+
+    body = client.get("/api/sync/status").json()
+    vo2 = next(d for d in body["data_types"] if d["data_type"] == "daily-vo2-max")
+    assert vo2["points_stored"] == 1
 
 
 def test_sync_returns_409_when_not_connected(client):

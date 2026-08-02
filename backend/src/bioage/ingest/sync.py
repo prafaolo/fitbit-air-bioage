@@ -14,14 +14,26 @@ advances after parse errors because the raw payload was already durably stored: 
 module's central design decision, a parser fix is applied by re-parsing stored raw data
 (`normalize_all`), never by re-fetching a window whose data may since have aged out of
 the API's queryable range.
+
+Every fetched payload is archived, including ones a parser cannot make sense of.
+`RawDataPoint` is keyed on (data_type, point_date, payload_hash): when a payload fails
+to parse, `point_date` falls back to the window's start date, so many distinct
+unparseable payloads in one window would otherwise collide on the same (data_type,
+point_date) pair and overwrite one another, leaving one arbitrary row behind out of what
+might have been 90 archived days. The payload hash discriminates them without
+sacrificing idempotency: re-fetching and re-syncing the same window reproduces the same
+hashes, so `on_conflict_do_update` still updates existing rows in place rather than
+duplicating them.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from typing import Protocol
+from typing import Any, Protocol
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -32,6 +44,17 @@ from bioage.ingest.registry import DATA_TYPES, DataTypeSpec, get_spec
 from bioage.types import DateRange
 
 logger = logging.getLogger(__name__)
+
+
+def _payload_hash(payload: dict[str, Any]) -> str:
+    """A stable hash of a payload's canonical JSON form.
+
+    `sort_keys=True` makes the hash independent of key order, which the API gives no
+    guarantee about across requests for what is otherwise the same payload. This is the
+    discriminator in `RawDataPoint`'s unique constraint -- see the module docstring.
+    """
+    canonical = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 class DataPointSource(Protocol):
@@ -111,21 +134,21 @@ class SyncService:
                 )
                 parse_errors += 1
                 parsed = None
-            if parsed is None and spec.expected_empty:
-                # This data type is not expected to be populated for this device (e.g.
-                # VO2max, whose parser is a deliberate no-op). Without this guard, every
-                # unparseable payload in the window would collide on the same raw-row
-                # key (data_type, window.start) and silently overwrite one another,
-                # leaving at most one arbitrary row behind. Since the parser can never
-                # extract anything from these payloads anyway, skipping the raw write
-                # loses nothing and avoids a misleading partial archive.
-                continue
             point_date = parsed.day if parsed else window.start
             self._session.execute(
                 insert(RawDataPoint)
-                .values(data_type=spec.data_type_id, point_date=point_date, payload=payload)
+                .values(
+                    data_type=spec.data_type_id,
+                    point_date=point_date,
+                    payload=payload,
+                    payload_hash=_payload_hash(payload),
+                )
                 .on_conflict_do_update(
-                    index_elements=[RawDataPoint.data_type, RawDataPoint.point_date],
+                    index_elements=[
+                        RawDataPoint.data_type,
+                        RawDataPoint.point_date,
+                        RawDataPoint.payload_hash,
+                    ],
                     set_={"payload": payload},
                 )
             )

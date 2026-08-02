@@ -31,12 +31,28 @@ MEASUREMENT_KINDS = ("height_m", "weight_kg", "waist_cm")
 
 
 class RawDataPoint(Base):
+    """One archived payload as fetched from the Google Health API.
+
+    Keyed on (data_type, point_date, payload_hash), not just (data_type, point_date).
+    A parser that returns None for a payload falls back to keying it on the window
+    start date (see bioage.ingest.sync), which means many distinct unparseable
+    payloads in the same window would otherwise share a key. The hash discriminates
+    them so a parser regression can never silently collapse 90 archived days down to
+    one arbitrary row -- while still keeping re-syncs of an identical payload
+    idempotent (same hash -> same conflict target -> update in place, not a new row).
+    """
+
     __tablename__ = "raw_data_points"
-    __table_args__ = (UniqueConstraint("data_type", "point_date", name="uq_raw_type_date"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "data_type", "point_date", "payload_hash", name="uq_raw_type_date_hash"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     data_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     point_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
     ingested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

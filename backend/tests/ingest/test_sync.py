@@ -221,3 +221,66 @@ def test_expected_empty_types_report_zero_without_error(db):
     )
     assert report.error is None
     assert report.points_fetched == 0
+
+
+def test_expected_empty_types_still_archive_payloads_they_do_receive(db):
+    """expected_empty only describes what the Air is known to produce today; it must
+    never suppress the raw write, or points_stored would stay pinned at 0 even if
+    Google started populating this data type tomorrow."""
+    payload = {"dailyVo2Max": {"date": {"year": 2026, "month": 6, "day": 1}}}
+
+    class Client:
+        def list_data_points(self, spec, window):
+            return [payload]
+
+    report = SyncService(db, Client(), backfill_days=30).sync_data_type(
+        get_spec("daily-vo2-max"), today=date(2026, 6, 10)
+    )
+    db.flush()
+    assert report.error is None
+    assert db.query(RawDataPoint).filter_by(data_type="daily-vo2-max").count() == 1
+
+
+def test_parser_returning_none_for_many_payloads_retains_all_of_them(db):
+    """Regression for the raw-row collision bug: every payload a parser cannot make
+    sense of falls back to being keyed on (data_type, window.start) alone. Before
+    payload_hash discriminated them, N distinct unparseable payloads in one window
+    collided on that single key and only one survived -- so a parser fix (e.g. Google
+    renaming a JSON key) would find only one of up to 90 archived days still there.
+    """
+    payloads = [{"dailyVo2Max": {"marker": i}} for i in range(5)]
+
+    class UnparseableClient:
+        def list_data_points(self, spec, window):
+            return payloads
+
+    SyncService(db, UnparseableClient(), backfill_days=30).sync_data_type(
+        get_spec("daily-vo2-max"), today=date(2026, 6, 10)
+    )
+    db.flush()
+    assert (
+        db.query(RawDataPoint).filter_by(data_type="daily-vo2-max").count() == len(payloads)
+    )
+
+
+def test_resyncing_an_unparseable_payload_does_not_duplicate_the_row(db):
+    """The same fix must not sacrifice idempotency: re-fetching and re-syncing an
+    identical unparseable payload should update the existing row in place, not add a
+    second one with the same content."""
+    payload = {"dailyVo2Max": {"marker": "same"}}
+
+    class RepeatingClient:
+        def list_data_points(self, spec, window):
+            return [payload]
+
+    service = SyncService(db, RepeatingClient(), backfill_days=30)
+    service.sync_data_type(get_spec("daily-vo2-max"), today=date(2026, 6, 10))
+    db.flush()
+    first_count = db.query(RawDataPoint).filter_by(data_type="daily-vo2-max").count()
+    assert first_count == 1
+
+    db.query(SyncState).delete()
+    db.flush()
+    service.sync_data_type(get_spec("daily-vo2-max"), today=date(2026, 6, 10))
+    db.flush()
+    assert db.query(RawDataPoint).filter_by(data_type="daily-vo2-max").count() == first_count

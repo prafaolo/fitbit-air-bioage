@@ -19,19 +19,34 @@ def test_raw_data_point_round_trips_jsonb(db):
         data_type="daily-resting-heart-rate",
         point_date=date(2026, 6, 1),
         payload={"dailyRestingHeartRate": {"beatsPerMinute": "58"}},
+        payload_hash="hash-1",
     ))
     db.flush()
     stored = db.query(RawDataPoint).one()
     assert stored.payload["dailyRestingHeartRate"]["beatsPerMinute"] == "58"
 
 
-def test_raw_data_point_rejects_duplicate_type_and_date(db):
+def test_raw_data_point_rejects_duplicate_type_date_and_hash(db):
     for _ in range(2):
         db.add(RawDataPoint(
-            data_type="steps", point_date=date(2026, 6, 1), payload={},
+            data_type="steps", point_date=date(2026, 6, 1), payload={}, payload_hash="same-hash",
         ))
     with pytest.raises(IntegrityError):
         db.flush()
+
+
+def test_raw_data_point_allows_same_type_and_date_with_different_hash(db):
+    """The fix this schema exists for: many distinct payloads that all fall back to the
+    same (data_type, point_date) -- e.g. every unparseable payload in one sync window,
+    keyed on the window's start date -- must each get their own row, not collide."""
+    db.add(RawDataPoint(
+        data_type="steps", point_date=date(2026, 6, 1), payload={"a": 1}, payload_hash="hash-a",
+    ))
+    db.add(RawDataPoint(
+        data_type="steps", point_date=date(2026, 6, 1), payload={"b": 2}, payload_hash="hash-b",
+    ))
+    db.flush()
+    assert db.query(RawDataPoint).count() == 2
 
 
 def test_daily_metric_allows_every_measurement_to_be_null(db):
