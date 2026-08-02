@@ -117,7 +117,6 @@ class KdmBiomarker(BaseModel):
 class KdmConstants(Cited):
     min_biomarkers: int
     s_ba: float
-    sigma_years: float
     biomarkers: dict[str, KdmBiomarker]
 
 

@@ -4,7 +4,6 @@ source: DERIVED by bioage.reference.regenerate_kdm from the published age-strati
 derived: true
 min_biomarkers: 3
 s_ba: 11.0
-sigma_years: 6.5
 biomarkers:
   resting_hr_bpm:
     q: 63.261905

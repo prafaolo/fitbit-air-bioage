@@ -126,11 +126,42 @@ def test_kdm_age_worsening_every_biomarker_increases_the_estimate():
 def test_the_source_documents_denominator_does_not_satisfy_the_identity():
     """Regression guard: sum((k/s^2)^2) is the wrong denominator.
 
-    reference-research-from-claude.md prints it that way. Recomputing with it here shows
-    it fails to recover A, which is why the implementation uses sum(k^2/s^2).
+    reference-research-from-claude.md prints it that way. This test exercises the actual
+    implementation (kdm_bio_age) and asserts it recovers the exact age -- which fails if
+    the implementation's denominator is ever reverted to sum((k/s^2)^2) -- alongside an
+    inline recomputation showing that wrong denominator does not recover the age either.
     """
     age = 50.0
     obs = _on_the_line(age)
+
+    implementation_result = kdm_bio_age(obs, REFS, chronological_age=age, s_ba=None)
+    assert implementation_result == pytest.approx(age, abs=1e-9)
+
     numerator = sum((obs[n] - r.q) * (r.k / r.s**2) for n, r in REFS.items())
     wrong_denominator = sum((r.k / r.s**2) ** 2 for r in REFS.values())
     assert numerator / wrong_denominator != pytest.approx(age, abs=1.0)
+
+
+def test_kdm_age_sigma_is_larger_with_fewer_biomarkers():
+    """Sigma is realized information, not a fixed constant: fewer biomarkers, less
+    information, larger sigma."""
+    five_biomarkers = BiomarkerVector(
+        chronological_age=40.0,
+        sex=Sex.MALE,
+        resting_hr_bpm=60.0,
+        hrv_rmssd_ms=45.0,
+        mean_daily_steps=9000.0,
+        sleep_efficiency_pct=90.0,
+        bmi=23.5,
+    )
+    three_biomarkers = BiomarkerVector(
+        chronological_age=40.0,
+        sex=Sex.MALE,
+        resting_hr_bpm=60.0,
+        hrv_rmssd_ms=45.0,
+        mean_daily_steps=9000.0,
+    )
+    five = kdm_age(five_biomarkers)
+    three = kdm_age(three_biomarkers)
+    assert five is not None and three is not None
+    assert three.sigma_years > five.sigma_years

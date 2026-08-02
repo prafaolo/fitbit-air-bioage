@@ -99,7 +99,6 @@ def main() -> None:
         "derived": True,
         "min_biomarkers": 3,
         "s_ba": 11.0,
-        "sigma_years": 6.5,
         "biomarkers": biomarkers,
     }
 
