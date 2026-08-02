@@ -105,3 +105,22 @@ class StepsMortalityConstants(Cited):
 @lru_cache
 def get_steps_mortality() -> StepsMortalityConstants:
     return StepsMortalityConstants(**load_yaml("steps_mortality"))
+
+
+class KdmBiomarker(BaseModel):
+    q: float
+    k: float
+    s: float
+    source: str
+
+
+class KdmConstants(Cited):
+    min_biomarkers: int
+    s_ba: float
+    sigma_years: float
+    biomarkers: dict[str, KdmBiomarker]
+
+
+@lru_cache
+def get_kdm() -> KdmConstants:
+    return KdmConstants(**load_yaml("kdm_biomarkers"))
