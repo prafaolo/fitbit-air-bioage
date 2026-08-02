@@ -23,21 +23,27 @@ from bioage.types import Sex
 DEMO_SEED = 20260802
 DEMO_BIRTHDATE = date(1990, 3, 14)
 
-# Non-wear stretches: a real wearable is set down for days at a time (forgotten charge,
-# travel, a broken band) rather than dropped independently night to night. The first
-# stretch never starts before this offset, so a short demo history (as used for early
-# scoring windows) is fully populated while a longer one still exercises gap handling.
-GAP_EARLIEST_OFFSET = 210
+# Onboarding: a brand-new wearable's first fortnight of data is complete, mirroring the
+# MIN_WINDOW_DAYS bootstrap the scoring layer needs before it can say anything at all.
+# After that, two independent non-wear mechanisms apply, tuned so the long-run averages
+# land near ~6% of days with the device off entirely (no resting HR, no steps) and ~12%
+# of days with no HRV: contiguous multi-day blocks model the common case (forgotten
+# charger, travel, a broken band), and the smaller per-day probability models an
+# occasional bad-contact night on an otherwise worn day.
+ONBOARDING_DAYS = 14
+NO_WEAR_BLOCK_LENGTH_DAYS = (2, 6)
+NO_WEAR_BLOCK_GAP_DAYS = (45, 80)
+HRV_ONLY_MISS_PROBABILITY = 0.065
 
 
-def _gap_blocks(days: int, rng: random.Random) -> list[tuple[int, int]]:
-    """Contiguous unworn day ranges, as half-open [start, end) offsets from day 0."""
+def _no_wear_blocks(days: int, rng: random.Random) -> list[tuple[int, int]]:
+    """Contiguous fully-unworn day ranges, as half-open [start, end) offsets from day 0."""
     blocks: list[tuple[int, int]] = []
-    cursor = GAP_EARLIEST_OFFSET + rng.randint(0, 20)
+    cursor = ONBOARDING_DAYS + rng.randint(*NO_WEAR_BLOCK_GAP_DAYS)
     while cursor < days:
-        length = rng.randint(4, 10)
+        length = rng.randint(*NO_WEAR_BLOCK_LENGTH_DAYS)
         blocks.append((cursor, min(cursor + length, days)))
-        cursor += length + 110 + rng.randint(0, 30)
+        cursor += length + rng.randint(*NO_WEAR_BLOCK_GAP_DAYS)
     return blocks
 
 
@@ -46,9 +52,14 @@ def generate_daily_metrics(
     days: int,
     seed: int = DEMO_SEED,
 ) -> list[DailyMetric]:
-    """Produce `days` consecutive DailyMetric rows with realistic structure and gaps."""
+    """Produce `days` consecutive DailyMetric rows with realistic structure and gaps.
+
+    After the first `ONBOARDING_DAYS`, some days are missing resting HR and steps
+    entirely (multi-day non-wear blocks) and a further slice are missing HRV and sleep
+    fields only (worn, but no overnight contact) - see the module-level constants.
+    """
     rng = random.Random(seed)
-    gap_blocks = _gap_blocks(days, rng)
+    no_wear_blocks = _no_wear_blocks(days, rng)
     metrics: list[DailyMetric] = []
 
     for offset in range(days):
@@ -68,10 +79,14 @@ def generate_daily_metrics(
         efficiency = min(99.0, max(60.0, rng.gauss(89.0 + 2.0 * trend, 3.5)))
         midpoint = (rng.gauss(200.0, 45.0)) % 1440.0
 
-        # Realistic gaps: the band is set down for whole stretches, not single nights.
-        in_gap = any(block_start <= offset < block_end for block_start, block_end in gap_blocks)
-        wore_device = not in_gap
-        got_hrv = not in_gap
+        # Realistic gaps: most non-wear happens in multi-day stretches; a smaller share
+        # is a single bad-contact night on a day the band was otherwise worn.
+        in_no_wear_block = any(start <= offset < end for start, end in no_wear_blocks)
+        wore_device = not in_no_wear_block
+        if wore_device and offset >= ONBOARDING_DAYS:
+            got_hrv = rng.random() > HRV_ONLY_MISS_PROBABILITY
+        else:
+            got_hrv = wore_device
 
         metrics.append(
             DailyMetric(

@@ -26,12 +26,18 @@ def test_generates_the_requested_number_of_consecutive_days():
 
 
 def test_values_are_physiologically_plausible():
+    """Missing days are the normal case for a wearable; only present values are checked."""
     for m in generate_daily_metrics(date(2026, 1, 1), days=200):
-        assert 40 <= m.resting_hr_bpm <= 100
-        assert 5 <= m.hrv_rmssd_ms <= 150
-        assert 0 <= m.steps <= 40000
-        assert 0 <= m.sleep_efficiency_pct <= 100
-        assert 0 <= m.sleep_midpoint_local_min < 1440
+        if m.resting_hr_bpm is not None:
+            assert 40 <= m.resting_hr_bpm <= 100
+        if m.hrv_rmssd_ms is not None:
+            assert 5 <= m.hrv_rmssd_ms <= 150
+        if m.steps is not None:
+            assert 0 <= m.steps <= 40000
+        if m.sleep_efficiency_pct is not None:
+            assert 0 <= m.sleep_efficiency_pct <= 100
+        if m.sleep_midpoint_local_min is not None:
+            assert 0 <= m.sleep_midpoint_local_min < 1440
 
 
 def test_generator_leaves_realistic_gaps():
