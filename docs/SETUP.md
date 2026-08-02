@@ -199,7 +199,10 @@ automatically every day, set in `.env`:
 SYNC_SCHEDULE_ENABLED=true
 ```
 
-(`SYNC_SCHEDULE_CRON` controls the time, `0 5 * * *` — 5am — by default.) Then:
+(`SYNC_SCHEDULE_CRON` controls the time, `0 5 * * *` by default — **evaluated in UTC**,
+since that's the backend container's own clock, not your local timezone. `0 5 * * *`
+means 05:00 UTC, which is not 5am local time unless you happen to be in that zone;
+convert your desired local time to UTC yourself when setting this.) Then:
 
 ```bash
 docker compose restart backend

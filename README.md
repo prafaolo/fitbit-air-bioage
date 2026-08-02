@@ -3,9 +3,8 @@
 A self-hosted app that turns the data your **Fitbit Air** syncs into **Google Health**
 into a weekly biological-age estimate, tracked as a trend over time.
 
-![Dashboard screenshot placeholder](docs/dashboard-screenshot.png)
-
-*(screenshot to be added — run the app via the quickstart below to see it live)*
+*(A dashboard screenshot is still to be added here — run the app via the quickstart
+below to see it live.)*
 
 ## What this is — and isn't
 
