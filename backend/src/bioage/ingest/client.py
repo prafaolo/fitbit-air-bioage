@@ -21,6 +21,12 @@ BASE_URL = "https://health.googleapis.com/v4"
 RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
 DEFAULT_MAX_RETRIES = 5
 DEFAULT_BACKOFF_SECONDS = 1.0
+# A 90-day chunk of the densest registered data type (steps, one point per minute) is at
+# most 90 * 1440 = 129,600 points; at the largest page_size in the registry (1440) that is
+# 90 pages for a fully legitimate response. 500 gives >5x headroom above any real payload
+# while still bounding a pathological server (e.g. one that echoes a stale or repeating
+# nextPageToken forever) to a finite, diagnosable failure instead of an infinite loop.
+DEFAULT_MAX_PAGES = 500
 
 
 class GoogleHealthError(RuntimeError):
@@ -39,12 +45,14 @@ class GoogleHealthClient:
         max_retries: int = DEFAULT_MAX_RETRIES,
         backoff_seconds: float = DEFAULT_BACKOFF_SECONDS,
         sleep: Callable[[float], None] = time.sleep,
+        max_pages: int = DEFAULT_MAX_PAGES,
     ) -> None:
         self._token_provider = token_provider
         self._http = http or httpx.Client(timeout=30.0)
         self._max_retries = max_retries
         self._backoff_seconds = backoff_seconds
         self._sleep = sleep
+        self._max_pages = max_pages
 
     def build_filter(self, spec: DataTypeSpec, window: DateRange) -> str:
         """AIP-160 filter constraining the query to a half-open date interval."""
@@ -66,13 +74,18 @@ class GoogleHealthClient:
         }
         collected: list[dict[str, Any]] = []
 
-        while True:
+        for _page in range(self._max_pages):
             payload = self._get(url, params)
             collected.extend(payload.get("dataPoints") or [])
             token = payload.get("nextPageToken")
             if not token:
                 return collected
             params = {**params, "pageToken": token}
+
+        raise GoogleHealthError(
+            f"Google Health API paginated past the {self._max_pages}-page budget for "
+            f"{spec.data_type_id} over {window.start}..{window.end}"
+        )
 
     def _get(self, url: str, params: dict[str, str | int]) -> dict[str, Any]:
         last_status: int | None = None

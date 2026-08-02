@@ -64,6 +64,23 @@ def test_an_empty_string_page_token_terminates_pagination():
 
 
 @respx.mock
+def test_a_never_ending_page_token_raises_instead_of_hanging():
+    """A server that keeps returning a non-empty nextPageToken forever (e.g. echoing the
+    same stale cursor) must not spin the client forever -- it must fail with a diagnosable
+    error once the page budget is exhausted."""
+    route = respx.get(url__startswith=BASE_URL).mock(
+        return_value=httpx.Response(
+            200, json={"dataPoints": [{"a": 1}], "nextPageToken": "same-token-always"}
+        )
+    )
+    with pytest.raises(GoogleHealthError, match="daily-resting-heart-rate"):
+        make_client(max_pages=3).list_data_points(
+            get_spec("daily-resting-heart-rate"), DateRange(date(2026, 6, 1), date(2026, 6, 10))
+        )
+    assert route.call_count == 3
+
+
+@respx.mock
 def test_two_hundred_day_backfill_is_split_into_three_requests():
     """The query cap is 90 days, so a 200-day range needs three sequential calls."""
     route = respx.get(url__startswith=BASE_URL).mock(
