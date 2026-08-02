@@ -102,6 +102,15 @@ cd frontend && npm test
 
 ## Licence
 
-No licence file is currently included in this repository, so by default all rights are
-reserved by the author. If you'd like to reuse or share this code, add a licence file
-and update this section, or ask the repository owner.
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+
+Licensed under the **GNU Affero General Public License v3.0** (AGPL-3.0) — see
+[`LICENSE`](LICENSE) for the full, unmodified text.
+
+The AGPL is the GPL plus one extra clause (§13) that matters specifically because this
+is a self-hostable *network service*, not a library or a desktop app: if you run a
+modified version of this code and let other people use it over a network — including
+just handing them access to your own deployment — you must offer those users the
+modified source code, not only people you distribute a binary to. Using this app
+privately, for yourself, imposes no obligation on you either way; the network-use clause
+only activates once *someone else* is using your modified version.
