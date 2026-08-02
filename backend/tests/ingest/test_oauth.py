@@ -88,6 +88,15 @@ def test_store_credentials_keeps_the_existing_refresh_token_when_google_omits_it
     assert db.get(OAuthCredential, 1).access_token == "at2"
 
 
+def test_store_credentials_raises_when_no_refresh_token_and_none_stored(db):
+    """If Google omits the refresh token and none is on file, the user must reconnect --
+    silently storing an empty refresh_token would break unattended sync later."""
+    with pytest.raises(RuntimeError, match="Revoke.*reconnect"):
+        store_credentials(db, {"access_token": "at", "expires_in": 3600})
+    db.flush()
+    assert db.query(OAuthCredential).count() == 0
+
+
 def test_access_token_raises_when_not_connected(db, settings):
     with pytest.raises(NotConnectedError):
         access_token(db, settings, http=httpx.Client())
