@@ -29,7 +29,13 @@ def parse_duration_seconds(value: str) -> float:
 def parse_int64(value: str | int | None) -> int | None:
     if value is None:
         return None
-    return int(value)
+    if isinstance(value, bool):
+        raise ValueError(f"int64 does not accept bool: {value!r}")
+    if isinstance(value, float):
+        raise ValueError(f"int64 does not accept float: {value!r}")
+    if isinstance(value, (str, int)):
+        return int(value)
+    raise ValueError(f"int64 must be str, int, or None: {value!r}")
 
 
 def parse_double(value: float | str | None) -> float | None:

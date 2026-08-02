@@ -45,6 +45,21 @@ def test_int64_passes_none_through():
     assert parse_int64(None) is None
 
 
+def test_int64_rejects_float_to_prevent_truncation():
+    with pytest.raises(ValueError, match="int64 does not accept float"):
+        parse_int64(58.5)
+
+
+def test_int64_rejects_bool_true():
+    with pytest.raises(ValueError, match="int64 does not accept bool"):
+        parse_int64(True)
+
+
+def test_int64_rejects_bool_false():
+    with pytest.raises(ValueError, match="int64 does not accept bool"):
+        parse_int64(False)
+
+
 def test_double_accepts_number_and_string():
     assert parse_double(58.5) == pytest.approx(58.5)
     assert parse_double("58.5") == pytest.approx(58.5)
