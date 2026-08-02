@@ -92,6 +92,17 @@ requires you to explicitly allow your own account to use it.
    `access_denied`. Adding yourself here is what lets your own account through.
 6. Save.
 
+   **One consequence of staying in Testing worth knowing now, not when it bites:**
+   Google expires refresh tokens issued by a **Testing**-status OAuth client after
+   **7 days**, regardless of use. This app's scheduled and manual syncs both depend on
+   that refresh token staying valid indefinitely, so on a Testing-status client, sync
+   will start failing with an auth error about a week after you connect — see
+   **"Sync stops working about a week after connecting"** in Troubleshooting below for
+   the fix (reconnect, or move the app to **Production** status to remove the 7-day
+   limit). Test users can stay on the app in Testing status indefinitely for everything
+   *except* this refresh-token lifetime, so this is the one reason you might want to
+   publish to Production even for a single-user personal tool.
+
 ## 6. Add the OAuth scopes
 
 Still on the OAuth consent screen configuration, find **Data Access** (or **Scopes**,
@@ -218,6 +229,27 @@ you approved an older consent before adding a scope. Revoke the app's access at
 **myaccount.google.com/permissions** (find it in the list and remove access), then
 reconnect from the Connection page — Google will re-prompt for consent with the current
 scopes.
+
+**Sync stops working about a week after connecting**
+Cause: your OAuth client is in **Testing** publishing status (the default — see step 5),
+and Google expires refresh tokens issued by a Testing-status client after **7 days**,
+regardless of how often the app is used. This app's sync depends on that refresh token
+staying valid, so this is the expected, not a rare, failure mode for a Testing-status
+client. Symptom: sync (scheduled or manual) starts failing with an auth error roughly a
+week after you completed the "Connect Google Health" flow — the client refresh loop in
+`bioage/ingest/client.py` retries a `401` exactly once against a forced token refresh,
+and that refresh itself fails once the refresh token is expired, so the sync report
+shows an error rather than retrying forever. Fix, either of:
+- **Reconnect**: go to the Connection page and click "Connect Google Health" again. This
+  is a two-minute fix but you'll need to repeat it roughly weekly.
+- **Publish the OAuth app to Production**: in Cloud Console, go to **APIs & Services →
+  OAuth consent screen** and click **Publish App**. This removes the 7-day refresh-token
+  expiry. Since this app requests read-only health scopes that Google classifies as
+  sensitive, publishing may prompt a verification notice — for a single-user app not
+  distributed to anyone else, you can leave it published-but-unverified; Google does not
+  require verification to complete for your own account to keep using it, only the
+  "unverified app" warning at sign-in (already covered in step 9) to reappear if you
+  ever have to reconnect.
 
 **"Google did not return a refresh token"**
 Google only issues a refresh token on the *first* consent for a given app/account pair;

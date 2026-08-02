@@ -46,6 +46,7 @@ class GoogleHealthClient:
         backoff_seconds: float = DEFAULT_BACKOFF_SECONDS,
         sleep: Callable[[float], None] = time.sleep,
         max_pages: int = DEFAULT_MAX_PAGES,
+        force_refresh: Callable[[], str] | None = None,
     ) -> None:
         self._token_provider = token_provider
         self._http = http or httpx.Client(timeout=30.0)
@@ -53,6 +54,12 @@ class GoogleHealthClient:
         self._backoff_seconds = backoff_seconds
         self._sleep = sleep
         self._max_pages = max_pages
+        # Distinct from token_provider: token_provider may return a cached token that
+        # our own bookkeeping believes is still valid, which is exactly the case a 401
+        # from Google disproves. force_refresh bypasses that cache. Optional so
+        # existing callers (and tests) that only care about the happy path don't need
+        # to wire it up.
+        self._force_refresh = force_refresh
 
     def build_filter(self, spec: DataTypeSpec, window: DateRange) -> str:
         """AIP-160 filter constraining the query to a half-open date interval."""
@@ -89,6 +96,7 @@ class GoogleHealthClient:
 
     def _get(self, url: str, params: dict[str, str | int]) -> dict[str, Any]:
         last_status: int | None = None
+        refreshed_after_401 = False
 
         for attempt in range(self._max_retries):
             response = self._http.get(
@@ -99,6 +107,26 @@ class GoogleHealthClient:
             if response.status_code == 200:
                 result: dict[str, Any] = response.json()
                 return result
+
+            retry_after_refresh = self._force_refresh is not None and not refreshed_after_401
+            if response.status_code == 401 and retry_after_refresh:
+                # 401 is deliberately NOT in RETRYABLE_STATUSES: a permanently revoked
+                # token must not be retried five times with exponential backoff like a
+                # transient 5xx. This is a single forced-refresh retry, orthogonal to
+                # that budget -- if the token was merely stale (our cached expiry was
+                # wrong, or Google invalidated it early), one retry with a genuinely
+                # fresh token fixes it; if the refresh token itself is dead,
+                # force_refresh raises and that propagates immediately.
+                refreshed_after_401 = True
+                self._force_refresh()
+                response = self._http.get(
+                    url,
+                    params=params,
+                    headers={"Authorization": f"Bearer {self._token_provider()}"},
+                )
+                if response.status_code == 200:
+                    result = response.json()
+                    return result
 
             last_status = response.status_code
             if response.status_code not in RETRYABLE_STATUSES:

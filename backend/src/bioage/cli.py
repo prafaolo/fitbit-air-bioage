@@ -41,7 +41,10 @@ def sync_command() -> None:
 
     settings = get_settings()
     with session_factory(settings.database_url)() as session, httpx.Client(timeout=30) as http:
-        client = GoogleHealthClient(token_provider=lambda: access_token(session, settings, http))
+        client = GoogleHealthClient(
+            token_provider=lambda: access_token(session, settings, http),
+            force_refresh=lambda: access_token(session, settings, http, force=True),
+        )
         reports = SyncService(session, client, settings.backfill_days).sync_all()
         weeks = rescore_all(session)
         session.commit()

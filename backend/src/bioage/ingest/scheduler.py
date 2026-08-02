@@ -24,7 +24,10 @@ logger = logging.getLogger(__name__)
 
 def run_scheduled_sync(settings: Settings) -> None:
     with session_factory(settings.database_url)() as session, httpx.Client(timeout=30) as http:
-        client = GoogleHealthClient(token_provider=lambda: access_token(session, settings, http))
+        client = GoogleHealthClient(
+            token_provider=lambda: access_token(session, settings, http),
+            force_refresh=lambda: access_token(session, settings, http, force=True),
+        )
         reports = SyncService(session, client, settings.backfill_days).sync_all()
         rescore_all(session)
         session.commit()

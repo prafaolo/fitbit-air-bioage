@@ -100,15 +100,22 @@ def access_token(
     settings: Settings,
     http: httpx.Client,
     now: datetime | None = None,
+    force: bool = False,
 ) -> str:
-    """Return a currently valid access token, refreshing it if necessary."""
+    """Return a currently valid access token, refreshing it if necessary.
+
+    `force=True` skips the cached-token check and always refreshes -- used when the
+    API has already told us the cached token is bad (a 401 despite our local expiry
+    bookkeeping saying it should still be valid, e.g. Google invalidated it early).
+    """
     credential = session.get(OAuthCredential, 1)
     if credential is None:
         raise NotConnectedError("No Google credentials stored. Complete the OAuth flow first.")
 
     moment = now or datetime.now(UTC)
     if (
-        credential.access_token
+        not force
+        and credential.access_token
         and credential.token_expiry
         and credential.token_expiry - EXPIRY_MARGIN > moment
     ):

@@ -152,6 +152,55 @@ def test_gives_up_after_the_retry_budget():
 
 
 @respx.mock
+def test_a_401_forces_a_refresh_and_retries_once():
+    respx.get(url__startswith=BASE_URL).mock(side_effect=[
+        httpx.Response(401, json={"error": {"message": "invalid credential"}}),
+        httpx.Response(200, json={"dataPoints": [{"ok": True}]}),
+    ])
+    refreshed = []
+
+    def force_refresh() -> str:
+        refreshed.append(True)
+        return "refreshed-token"
+
+    client = make_client(force_refresh=force_refresh)
+    points = client.list_data_points(
+        get_spec("daily-resting-heart-rate"), DateRange(date(2026, 6, 1), date(2026, 6, 10))
+    )
+    assert len(points) == 1
+    assert refreshed == [True]
+
+
+@respx.mock
+def test_a_401_without_force_refresh_configured_raises_immediately():
+    """Callers that never wire up force_refresh (e.g. a bare client in a unit test)
+    keep the old behaviour: 401 is not retryable, so it fails fast."""
+    route = respx.get(url__startswith=BASE_URL).mock(
+        return_value=httpx.Response(401, json={"error": {"message": "invalid credential"}})
+    )
+    with pytest.raises(GoogleHealthError, match="401"):
+        make_client().list_data_points(
+            get_spec("daily-resting-heart-rate"), DateRange(date(2026, 6, 1), date(2026, 6, 10))
+        )
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_a_401_that_persists_after_the_forced_refresh_fails_without_looping():
+    """A permanently revoked token must not be retried five times with backoff like a
+    transient 5xx -- exactly one forced-refresh retry, then fail."""
+    route = respx.get(url__startswith=BASE_URL).mock(return_value=httpx.Response(401))
+    client = make_client(force_refresh=lambda: "still-bad-token")
+    with pytest.raises(GoogleHealthError, match="401"):
+        client.list_data_points(
+            get_spec("daily-resting-heart-rate"), DateRange(date(2026, 6, 1), date(2026, 6, 10))
+        )
+    # The original request plus exactly one retry after the forced refresh -- not the
+    # 5-attempt backoff budget used for RETRYABLE_STATUSES.
+    assert route.call_count == 2
+
+
+@respx.mock
 def test_does_not_retry_a_403():
     """A missing scope is not transient; retrying wastes quota and hides the cause."""
     route = respx.get(url__startswith=BASE_URL).mock(

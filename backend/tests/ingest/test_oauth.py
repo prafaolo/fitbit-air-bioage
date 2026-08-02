@@ -123,6 +123,21 @@ def test_access_token_refreshes_when_expired(db, settings):
 
 
 @respx.mock
+def test_access_token_force_refreshes_even_when_the_cached_token_looks_valid(db, settings):
+    """force=True is what the HTTP client uses after Google returns 401 despite our
+    local bookkeeping saying the token should still be good -- it must not trust the
+    cache in that case."""
+    respx.post(TOKEN_URL).mock(return_value=httpx.Response(
+        200, json={"access_token": "forced-fresh", "expires_in": 3599}
+    ))
+    future = datetime.now(UTC) + timedelta(hours=1)
+    db.add(OAuthCredential(id=1, refresh_token="rt", access_token="looks-still-good",
+                           token_expiry=future, scopes=[]))
+    db.flush()
+    assert access_token(db, settings, http=httpx.Client(), force=True) == "forced-fresh"
+
+
+@respx.mock
 def test_refresh_uses_the_refresh_token_grant(db, settings):
     route = respx.post(TOKEN_URL).mock(return_value=httpx.Response(
         200, json={"access_token": "fresh", "expires_in": 3599}
