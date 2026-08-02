@@ -4,6 +4,16 @@ Raw payloads are written before parsing so a parser fix never requires re-fetchi
 that may have aged out of the API's queryable window. Each data type advances its own
 watermark independently, and a failure in one does not abort the others: a wearable that
 never populated VO2max should not block resting heart rate from syncing.
+
+Failure isolation is enforced at two levels: a fetch failure aborts only that data
+type's window (the watermark does not advance, so the next sync retries it), and within
+a window a single malformed payload aborts only that payload's parse (recorded via
+`SyncReport.parse_errors`) -- it does not stop the rest of the window from being parsed
+and written, and it does not prevent the watermark from advancing. The watermark still
+advances after parse errors because the raw payload was already durably stored: per this
+module's central design decision, a parser fix is applied by re-parsing stored raw data
+(`normalize_all`), never by re-fetching a window whose data may since have aged out of
+the API's queryable range.
 """
 
 from __future__ import annotations
@@ -34,6 +44,7 @@ class SyncReport:
     points_fetched: int
     days_written: int
     error: str | None = None
+    parse_errors: int = 0
 
 
 def _upsert_daily(session: Session, day: date, values: dict[str, float]) -> None:
@@ -85,8 +96,21 @@ class SyncService:
             return SyncReport(spec.data_type_id, 0, 0, error=str(exc))
 
         days_written = 0
+        parse_errors = 0
         for payload in points:
-            parsed = spec.parser(payload)
+            try:
+                parsed = spec.parser(payload)
+            except Exception as exc:
+                # The parsers are total against *missing* fields but not against
+                # *malformed* ones (an invalid proto Date, a non-numeric int64, ...);
+                # one bad payload must not abandon the rest of an otherwise-good
+                # window. Fall back to the same "unparseable" handling as a parser
+                # that returns None, and count it so the caller can surface it.
+                logger.warning(
+                    "parse failed for %s payload: %s", spec.data_type_id, exc
+                )
+                parse_errors += 1
+                parsed = None
             if parsed is None and spec.expected_empty:
                 # This data type is not expected to be populated for this device (e.g.
                 # VO2max, whose parser is a deliberate no-op). Without this guard, every
@@ -109,14 +133,33 @@ class SyncService:
                 _upsert_daily(self._session, parsed.day, parsed.values)
                 days_written += 1
 
+        # The watermark advances even when some payloads failed to parse: every payload
+        # in this window, parseable or not, was already durably written to
+        # raw_data_points above, so nothing is lost by moving on. Re-fetching the same
+        # window on the next sync would not fix a malformed payload -- only a parser fix
+        # followed by normalize_all can -- and it would re-request data that may partly
+        # age out of the API's queryable window before that fix ships.
         state.synced_through = today
         state.last_error = None
         self._session.merge(state)
-        return SyncReport(spec.data_type_id, len(points), days_written, None)
+        return SyncReport(spec.data_type_id, len(points), days_written, None, parse_errors)
 
     def sync_all(self, today: date | None = None) -> list[SyncReport]:
         moment = today or date.today()
-        return [self.sync_data_type(spec, moment) for spec in DATA_TYPES]
+        reports = []
+        for spec in DATA_TYPES:
+            try:
+                reports.append(self.sync_data_type(spec, moment))
+            except Exception as exc:
+                # Defense in depth: sync_data_type already contains the failures it
+                # knows how to name (fetch errors, per-payload parse errors). Anything
+                # that still escapes it (e.g. a database error) must not discard the
+                # reports already collected for the data types processed before it.
+                logger.warning(
+                    "sync_data_type raised unexpectedly for %s: %s", spec.data_type_id, exc
+                )
+                reports.append(SyncReport(spec.data_type_id, 0, 0, error=str(exc)))
+        return reports
 
 
 def normalize_all(session: Session) -> int:
@@ -128,7 +171,13 @@ def normalize_all(session: Session) -> int:
             spec = get_spec(row.data_type)
         except KeyError:
             continue
-        parsed = spec.parser(row.payload)
+        try:
+            parsed = spec.parser(row.payload)
+        except Exception as exc:
+            # Same rationale as the per-payload guard in sync_data_type: one malformed
+            # stored payload must not abort re-parsing of every other row.
+            logger.warning("re-parse failed for %s row: %s", row.data_type, exc)
+            continue
         if parsed:
             _upsert_daily(session, parsed.day, parsed.values)
             written += 1
