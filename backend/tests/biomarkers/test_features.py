@@ -4,6 +4,7 @@ import pytest
 
 from bioage.biomarkers.features import (
     LOW_CONFIDENCE_DAYS,
+    MIN_HRV_DAYS,
     MIN_WINDOW_DAYS,
     WINDOW_DAYS,
     DailyRecord,
@@ -38,9 +39,14 @@ def test_window_includes_only_the_trailing_30_days():
 
 
 def test_window_excludes_days_on_or_after_the_end_date():
-    records = make_records(40) + [DailyRecord(day=date(2026, 7, 5), resting_hr_bpm=99.0)]
+    records = (
+        make_records(40)
+        + [DailyRecord(day=date(2026, 7, 5), resting_hr_bpm=99.0)]
+        + [DailyRecord(day=date(2026, 7, 1), resting_hr_bpm=99.0)]
+    )
     window = window_records(records, window_end=date(2026, 7, 1))
     assert all(r.day < date(2026, 7, 1) for r in window)
+    assert date(2026, 7, 1) not in {r.day for r in window}
 
 
 def test_coverage_counts_days_per_biomarker():
@@ -121,6 +127,28 @@ def test_biomarker_below_its_own_minimum_is_dropped_from_the_vector():
     assert vector.resting_hr_bpm is not None
 
 
+def test_biomarker_at_exactly_its_own_minimum_is_included_in_the_vector():
+    """Exactly MIN_HRV_DAYS nights of HRV must be enough: pins >= vs > in the gate."""
+    records = make_records(20)
+    thinned = [
+        DailyRecord(
+            day=r.day,
+            resting_hr_bpm=r.resting_hr_bpm,
+            hrv_rmssd_ms=r.hrv_rmssd_ms if i < MIN_HRV_DAYS else None,
+            steps=r.steps,
+            sleep_efficiency_pct=r.sleep_efficiency_pct,
+            sleep_midpoint_local_min=r.sleep_midpoint_local_min,
+        )
+        for i, r in enumerate(records)
+    ]
+    vector = build_vector(
+        thinned, chronological_age=40.0, sex=Sex.MALE,
+        height_m=1.78, weight_kg=74.0, waist_cm=88.0,
+    )
+    assert vector is not None
+    assert vector.hrv_rmssd_ms is not None
+
+
 def test_regularity_is_computed_from_midpoints():
     records = make_records(30)
     vector = build_vector(
@@ -133,4 +161,5 @@ def test_regularity_is_computed_from_midpoints():
 
 def test_coverage_flags_low_confidence_below_the_threshold():
     assert compute_coverage(make_records(LOW_CONFIDENCE_DAYS - 1)).is_low_confidence is True
+    assert compute_coverage(make_records(LOW_CONFIDENCE_DAYS)).is_low_confidence is False
     assert compute_coverage(make_records(WINDOW_DAYS)).is_low_confidence is False
