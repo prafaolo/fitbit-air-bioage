@@ -1,0 +1,33 @@
+source: >-
+  Nes BM, Janszky I, Wisloff U, Stoylen A, Karlsen T. Age-predicted maximal heart rate
+  in healthy subjects: The HUNT Fitness Study. Scand J Med Sci Sports 2013;23:697-704;
+  non-exercise VO2max equations from the HUNT Fitness Study (n=3,320), SEE 3.5 mL/kg/min.
+derived: false
+
+coefficients:
+  male:
+    intercept: 100.27
+    age: -0.296
+    physical_activity: 0.226
+    waist: -0.369
+    resting_hr: -0.155
+  female:
+    intercept: 74.74
+    age: -0.247
+    physical_activity: 0.198
+    waist: -0.259
+    resting_hr: -0.114
+
+# Reference population values. Fitness age is defined as the age at which a person with
+# these population-typical inputs would have the subject's VO2max. Values are HUNT-cohort
+# midpoints; changing them shifts all fitness ages by a constant offset, so they are
+# recorded explicitly rather than hidden in code.
+reference_population:
+  male:
+    physical_activity: 5.0
+    waist_cm: 94.0
+    resting_hr_bpm: 66.0
+  female:
+    physical_activity: 5.0
+    waist_cm: 84.0
+    resting_hr_bpm: 70.0
