@@ -68,6 +68,50 @@ describe("toChartRows", () => {
     const [row] = toChartRows([point({ components: [] })]);
     expect(row.componentAges).toEqual({});
   });
+
+  it("fills a gap in the middle with a null row per missing ISO week", () => {
+    // Three weeks apart (two missing weeks in between: 06-08 and 06-15) so the band
+    // has more than one gap week to prove every one is emitted, not just the first.
+    const rows = toChartRows([
+      point({ week_start: "2026-06-01" }),
+      point({ week_start: "2026-06-22" }),
+    ]);
+    expect(rows.map((r) => r.week)).toEqual([
+      "2026-06-01",
+      "2026-06-08",
+      "2026-06-15",
+      "2026-06-22",
+    ]);
+    const [scored1, gap1, gap2, scored2] = rows;
+    expect(scored1.bioAge).not.toBeNull();
+    expect(scored2.bioAge).not.toBeNull();
+    expect(gap1.bioAge).toBeNull();
+    expect(gap1.chronoAge).toBeNull();
+    expect(gap1.ciLow).toBeNull();
+    expect(gap1.ciHigh).toBeNull();
+    expect(gap1.band).toBeNull();
+    expect(gap1.lowConfidence).toBe(false);
+    expect(gap1.componentAges).toEqual({});
+    expect(gap1.componentSigmas).toEqual({});
+    expect(gap2.bioAge).toBeNull();
+  });
+
+  it("returns one row per week across the full span, not one row per scored week", () => {
+    const rows = toChartRows([
+      point({ week_start: "2026-06-01" }),
+      point({ week_start: "2026-07-06" }), // five weeks later
+    ]);
+    // 2026-06-01 to 2026-07-06 inclusive, stepping by 7 days, is 6 rows -- far more
+    // than the 2 SeriesPoints actually scored.
+    expect(rows).toHaveLength(6);
+    expect(rows.filter((r) => r.bioAge !== null)).toHaveLength(2);
+  });
+
+  it("returns a single row when only one week is scored", () => {
+    const rows = toChartRows([point({ week_start: "2026-06-01" })]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].week).toBe("2026-06-01");
+  });
 });
 
 describe("componentKeys", () => {
