@@ -45,7 +45,7 @@ months, not for diagnosing a Tuesday.
 | Resting heart rate (RHR) | `daily-resting-heart-rate` | NTNU fitness age, KDM |
 | HRV RMSSD (nightly, deep-sleep preferred) | `daily-heart-rate-variability` | HRV-norm age, KDM |
 | Steps (daily count) | `steps` | NTNU physical-activity index, step-count mortality age, KDM |
-| Sleep efficiency, derived (see §6) | `sleep` | KDM |
+| Sleep efficiency, derived (see §6.5) | `sleep` | KDM |
 
 ### Trend-only signals (surfaced in the UI, never fed into an age estimator)
 
@@ -57,7 +57,27 @@ months, not for diagnosing a Tuesday.
 Respiratory rate (`daily-respiratory-rate`) and Active Zone Minutes
 (`active-zone-minutes`) are also ingested. Respiratory rate is carried in the feature
 vector but not consumed by any estimator today. Active Zone Minutes feeds only the NTNU
-physical-activity index as an intensity bonus (§6).
+physical-activity index as an intensity bonus (§6.1).
+
+### Computed but not yet consumed
+
+| Signal | Source | Status |
+|---|---|---|
+| Sleep regularity (circular SD of sleep midpoints, minutes) | derived from `sleep` (§6.5) | Computed by `regularity.py` and stored on every `BiomarkerVector`, but no estimator reads it and it is not surfaced in the frontend today. It is neither a primary input nor a trend-only display signal — it is dormant. |
+
+### Query-range cap
+
+Every data type this project reads — `daily-resting-heart-rate`,
+`daily-heart-rate-variability`, `daily-respiratory-rate`, `daily-oxygen-saturation`,
+`daily-sleep-temperature-derivations`, `steps`, `active-zone-minutes`, `sleep`, `weight`,
+`height`, and `daily-vo2-max` — is queried under Google's **90-day** maximum query
+range. Google's data-types documentation
+(https://developers.google.com/health/data-types, verified 2026-08-02) states that only
+four data types are capped at 14 days instead: `calories-in-heart-rate-zone`,
+`heart-rate`, `active-minutes`, and `total-calories`. None of those four are registered
+by this project (`backend/src/bioage/ingest/registry.py`), so no data type this project
+reads is subject to the 14-day cap — including `steps`, which an earlier version of this
+project wrongly capped at 14 days (§8.3).
 
 ### User-supplied profile fields
 
@@ -179,7 +199,7 @@ re-measured automatically, so a stale value silently biases every subsequent wee
 ### 4.2 HRV-norm age
 
 **Source:** log-linear fit of nightly RMSSD against age, `derived: true` in
-`hrv_norms.yaml`. See §8 for why these coefficients differ from the plan's original
+`hrv_norms.yaml`. See §8.2 for why these coefficients differ from the plan's original
 proposal.
 
 **Equation.** RMSSD is modeled as declining log-linearly with age:
@@ -267,7 +287,7 @@ guaranteed individual effect.
 
 **Source:** Klemera P, Doubal S. "A new approach to the concept and computation of
 biological age." *Mech Ageing Dev* 2006;127(3):240-8. **Constants are derived, not
-primary** — see §6.2 and §7 for how, and §8 for a correction to the formula as printed
+primary** — see §6.2 and §7 for how, and §8.1 for a correction to the formula as printed
 in this project's own source-research document.
 
 **Equation.** For each biomarker *j*, the reference population is assumed to satisfy a
@@ -291,7 +311,7 @@ and passed to every call), so the estimator in production always computes `BA_EC
 the bare `BA_E`.
 
 **The denominator squares `k_j`, not `k_j/s_j²`.** This is the exact point on which the
-plan's source-research document is wrong; see §8 for the full correction and the guard
+plan's source-research document is wrong; see §8.1 for the full correction and the guard
 test that pins it down.
 
 Reference regression constants (`backend/src/bioage/reference/kdm_biomarkers.yaml`,
@@ -558,7 +578,13 @@ for name, fn in [('ntnu', get_ntnu), ('pa_index', get_pa_index), ('hrv', get_hrv
 Every numeric value in this document was cross-checked against this command's output
 while writing it (see the task-28 report for the full dump).
 
-## 8. Correction to the source research
+## 8. Corrections to the source research and the original plan
+
+Three places where an earlier version of this project — the source-research document or
+the implementation plan that followed it — was wrong, and what the shipped code does
+instead.
+
+### 8.1 The KDM denominator
 
 The project's own source-research document, `reference-research-from-claude.md`, prints
 the Klemera–Doubal denominator incorrectly. It states (line 132):
@@ -595,3 +621,38 @@ implementation back to match the source document's printed formula, this test fa
 `reference-research-from-claude.md` is kept in the repository unmodified, as a historical
 record of the research that seeded this project's design — it is not corrected in place.
 This document, and the code, are the authoritative statement of the actual formula.
+
+### 8.2 The HRV RMSSD log-linear fit
+
+The original plan proposed fixed HRV-norm coefficients, `ln_intercept = 4.5326` and
+`ln_slope = -0.01614`. **These were not the least-squares solution** through the four
+normative RMSSD points used to fit them — (25, 60 ms), (45, 43 ms), (55, 34 ms),
+(65, 31 ms) — and left a **12.59% residual at age 55**, the worst-fit point:
+
+| Age | Normative RMSSD | Superseded fit residual | Shipped OLS-fit residual |
+|---|---|---|---|
+| 25 | 60 ms | +3.54% | −0.51% |
+| 45 | 43 ms | +4.61% | −1.43% |
+| 55 | 34 ms | **+12.59%** (max) | **+5.04%** (max) |
+| 65 | 31 ms | +5.08% | −2.92% |
+
+The shipped coefficients, `ln_intercept = 4.517350774886466` and
+`ln_slope = -0.017123740486994162` (§4.2, `hrv_norms.yaml`), are the actual OLS fit of
+`ln(RMSSD) = ln_intercept + ln_slope · age` over those same four points, computed with
+`numpy.polyfit`. Halving the worst-case residual (12.59% → 5.04%) matters here
+specifically because that residual is the error the HRV-norm estimator's age inversion
+inherits directly — a worse fit at the normative points means a worse age estimate for
+any subject whose RMSSD happens to sit near them.
+
+### 8.3 The `steps` query-range cap
+
+An earlier version of this project's ingest layer capped the `steps` data type's query
+range at 14 days, based on a bad summarisation of Google's data-types documentation.
+**This was wrong.** Per Google's data-types page
+(https://developers.google.com/health/data-types, verified 2026-08-02): "The maximum
+query range for calories-in-heart-rate-zone, heart-rate, active-minutes, and
+total-calories is 14 days. The maximum query range for all other data types is 90 days."
+`steps` is not one of those four exceptions, so it uses the same 90-day cap as every
+other data type this project reads (§2). `backend/src/bioage/ingest/registry.py` now
+documents both the correct cap and the wrong prior assumption in-line, specifically so
+the 14-day cap does not get silently reapplied to `steps` by someone "fixing" it back.
