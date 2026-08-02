@@ -72,3 +72,24 @@ class PaIndexConstants(Cited):
 @lru_cache
 def get_pa_index() -> PaIndexConstants:
     return PaIndexConstants(**load_yaml("pa_index"))
+
+
+class HrvSexFit(BaseModel):
+    ln_intercept: float
+    ln_slope: float
+
+
+class HrvNormConstants(Cited):
+    male: HrvSexFit
+    female: HrvSexFit
+    sigma_years: float
+    min_rmssd_ms: float
+    max_rmssd_ms: float
+
+    def fit_for(self, sex: Sex) -> HrvSexFit:
+        return self.male if sex is Sex.MALE else self.female
+
+
+@lru_cache
+def get_hrv_norms() -> HrvNormConstants:
+    return HrvNormConstants(**load_yaml("hrv_norms"))

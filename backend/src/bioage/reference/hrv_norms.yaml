@@ -1,0 +1,29 @@
+source: >-
+  DERIVED. Log-linear fit through nightly RMSSD normative medians reported in
+  reference-research-from-claude.md (approx. 60 ms at 25y, 43 ms in the 40s, 34 ms in the
+  50s, 31 ms in the 60s), consistent with the widely reported 1-3%/year decline in RMSSD
+  after the mid-20s. Coefficients satisfy ln(RMSSD) = intercept + slope * age and were
+  obtained by ordinary least squares of ln(RMSSD) on age over the four normative points
+  (25, 60), (45, 43), (55, 34), (65, 31); the least-squares solution was used because the
+  originally proposed intercept/slope pair (4.5326 / -0.01614) was not itself the
+  least-squares fit and left a 12.6% residual at age 55, versus a 5.0% max residual for the
+  refit below. Female offset reflects the small sex difference in RMSSD reported in
+  normative studies and is applied as a multiplicative factor on the fitted curve (same
+  slope, +0.03 on the log-intercept).
+
+derived: true
+
+male:
+  ln_intercept: 4.517350774886466
+  ln_slope: -0.017123740486994162
+female:
+  ln_intercept: 4.547350774886466
+  ln_slope: -0.017123740486994162
+
+# Nightly wrist-PPG RMSSD carries MAPE frequently above 10% against ECG reference
+# (Dial et al. 2025). Propagating a 12% measurement error through the fitted slope
+# (~0.0171 per year in log space) gives roughly 7 years.
+sigma_years: 7.0
+
+min_rmssd_ms: 5.0
+max_rmssd_ms: 250.0
