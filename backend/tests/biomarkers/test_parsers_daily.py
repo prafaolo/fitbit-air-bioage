@@ -1,0 +1,135 @@
+import json
+from datetime import date
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from bioage.biomarkers.parsers.daily import (
+    parse_daily_heart_rate_variability,
+    parse_daily_oxygen_saturation,
+    parse_daily_resting_heart_rate,
+    parse_daily_sleep_temperature_derivations,
+)
+from bioage.biomarkers.parsers.interval import parse_active_zone_minutes, parse_steps
+from bioage.biomarkers.parsers.sample import parse_height, parse_weight
+
+FIXTURES = Path(__file__).parent.parent / "fixtures" / "googlehealth"
+
+
+def load(name: str) -> dict[str, Any]:
+    return json.loads((FIXTURES / f"{name}.json").read_text())  # type: ignore[no-any-return]
+
+
+def test_resting_heart_rate_coerces_the_string_int64() -> None:
+    point = load("daily_resting_heart_rate")["dataPoints"][0]
+    parsed = parse_daily_resting_heart_rate(point)
+    assert parsed is not None
+    assert parsed.day == date(2026, 6, 1)
+    assert parsed.values["resting_hr_bpm"] == pytest.approx(58.0)
+
+
+def test_hrv_prefers_deep_sleep_rmssd_over_the_average() -> None:
+    point = load("daily_heart_rate_variability")["dataPoints"][0]
+    parsed = parse_daily_heart_rate_variability(point)
+    assert parsed is not None
+    assert parsed.values["hrv_rmssd_ms"] == pytest.approx(46.7)
+    assert parsed.values["hrv_average_ms"] == pytest.approx(41.2)
+
+
+def test_hrv_falls_back_to_the_average_when_rmssd_is_absent() -> None:
+    point = load("daily_heart_rate_variability")["dataPoints"][1]
+    parsed = parse_daily_heart_rate_variability(point)
+    assert parsed is not None
+    assert parsed.values["hrv_rmssd_ms"] == pytest.approx(38.9)
+
+
+def test_oxygen_saturation_uses_the_average_percentage() -> None:
+    point = load("daily_oxygen_saturation")["dataPoints"][0]
+    parsed = parse_daily_oxygen_saturation(point)
+    assert parsed is not None
+    assert parsed.values["spo2_pct"] == pytest.approx(96.4)
+
+
+def test_steps_coerces_the_string_count_and_dates_by_interval_start() -> None:
+    point = load("steps")["dataPoints"][0]
+    parsed = parse_steps(point)
+    assert parsed is not None
+    assert parsed.day == date(2026, 6, 1)
+    assert parsed.values["steps"] == pytest.approx(10432.0)
+
+
+def test_sleep_temperature_uses_the_relative_nightly_deviation() -> None:
+    point = {
+        "dailySleepTemperatureDerivations": {
+            "date": {"year": 2026, "month": 6, "day": 1},
+            "nightlyTemperatureCelsius": 33.8,
+            "baselineTemperatureCelsius": 33.5,
+            "relativeNightlyStddev30dCelsius": 0.3,
+        }
+    }
+    parsed = parse_daily_sleep_temperature_derivations(point)
+    assert parsed is not None
+    assert parsed.values["skin_temp_delta_c"] == pytest.approx(0.3)
+
+
+def test_active_zone_minutes_coerces_the_string_count() -> None:
+    point = {
+        "activeZoneMinutes": {
+            "interval": {
+                "startTime": "2026-06-01T00:00:00Z",
+                "endTime": "2026-06-02T00:00:00Z",
+            },
+            "heartRateZone": "FAT_BURN",
+            "activeZoneMinutes": "27",
+        }
+    }
+    parsed = parse_active_zone_minutes(point)
+    assert parsed is not None
+    assert parsed.values["active_zone_minutes"] == pytest.approx(27.0)
+
+
+def test_weight_and_height_use_sample_time() -> None:
+    weight = parse_weight(
+        {"weight": {"sampleTime": {"time": "2026-06-01T07:30:00Z"}, "kilograms": 74.3}}
+    )
+    assert weight is not None
+    assert weight.day == date(2026, 6, 1)
+    assert weight.values["weight_kg"] == pytest.approx(74.3)
+
+    height = parse_height(
+        {"height": {"sampleTime": {"time": "2026-06-01T07:30:00Z"}, "meters": 1.78}}
+    )
+    assert height is not None
+    assert height.values["height_m"] == pytest.approx(1.78)
+
+
+def test_weight_accepts_the_alternative_grams_encoding() -> None:
+    """The dataPoints overview documents weightGrams while the RPC reference documents
+    kilograms. Accept either rather than silently dropping the field."""
+    parsed = parse_weight(
+        {"weight": {"sampleTime": {"time": "2026-06-01T07:30:00Z"}, "weightGrams": 74300}}
+    )
+    assert parsed is not None
+    assert parsed.values["weight_kg"] == pytest.approx(74.3)
+
+
+@pytest.mark.parametrize(
+    "parser",
+    [
+        parse_daily_resting_heart_rate,
+        parse_daily_heart_rate_variability,
+        parse_daily_oxygen_saturation,
+        parse_steps,
+        parse_weight,
+    ],
+)
+def test_every_parser_returns_none_for_an_unrelated_payload(
+    parser: Any,
+) -> None:
+    assert parser({"somethingElse": {}}) is None
+
+
+def test_parser_returns_none_when_the_value_field_is_missing() -> None:
+    point = {"dailyRestingHeartRate": {"date": {"year": 2026, "month": 6, "day": 1}}}
+    assert parse_daily_resting_heart_rate(point) is None

@@ -1,0 +1,18 @@
+{
+  "dataPoints": [
+    {
+      "name": "users/me/dataTypes/daily-resting-heart-rate/dataPoints/p1",
+      "dailyRestingHeartRate": {
+        "date": {"year": 2026, "month": 6, "day": 1},
+        "beatsPerMinute": "58"
+      }
+    },
+    {
+      "name": "users/me/dataTypes/daily-resting-heart-rate/dataPoints/p2",
+      "dailyRestingHeartRate": {
+        "date": {"year": 2026, "month": 6, "day": 2},
+        "beatsPerMinute": "61"
+      }
+    }
+  ]
+}
