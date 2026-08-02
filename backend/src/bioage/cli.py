@@ -30,5 +30,27 @@ def rescore_command() -> None:
     typer.echo(f"Rescored {weeks} weeks.")
 
 
+@app.command("sync")
+def sync_command() -> None:
+    """Pull new data from the Google Health API and rescore."""
+    import httpx
+
+    from bioage.ingest.client import GoogleHealthClient
+    from bioage.ingest.oauth import access_token
+    from bioage.ingest.sync import SyncService
+
+    settings = get_settings()
+    with session_factory(settings.database_url)() as session, httpx.Client(timeout=30) as http:
+        client = GoogleHealthClient(token_provider=lambda: access_token(session, settings, http))
+        reports = SyncService(session, client, settings.backfill_days).sync_all()
+        weeks = rescore_all(session)
+        session.commit()
+
+    for report in reports:
+        status = f"ERROR: {report.error}" if report.error else f"{report.days_written} days"
+        typer.echo(f"  {report.data_type}: {status}")
+    typer.echo(f"Rescored {weeks} weeks.")
+
+
 if __name__ == "__main__":
     app()
