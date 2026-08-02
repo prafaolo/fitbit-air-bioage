@@ -93,3 +93,15 @@ class HrvNormConstants(Cited):
 @lru_cache
 def get_hrv_norms() -> HrvNormConstants:
     return HrvNormConstants(**load_yaml("hrv_norms"))
+
+
+class StepsMortalityConstants(Cited):
+    reference_steps: float
+    hazard_knots: list[tuple[float, float]]
+    mrdt_years: float
+    sigma_years: float
+
+
+@lru_cache
+def get_steps_mortality() -> StepsMortalityConstants:
+    return StepsMortalityConstants(**load_yaml("steps_mortality"))
