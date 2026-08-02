@@ -156,3 +156,27 @@ class SyncState(Base):
     synced_through: Mapped[date | None] = mapped_column(Date)
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(Text)
+
+
+class SyncRun(Base):
+    """Singleton row tracking the overall (all-data-types) sync job's run state.
+
+    POST /api/sync runs the 11-data-type sync plus rescore_all in a FastAPI background
+    task rather than inside the request, since the worst case (full retry budget on
+    every data type) is on the order of minutes -- too long for a synchronous HTTP
+    response. This row is how the frontend, polling GET /api/sync/status, learns
+    whether a background run is currently in flight and what the last one did, since
+    that information otherwise only exists inside a background task with no caller
+    left waiting on it.
+    """
+
+    __tablename__ = "sync_run"
+    __table_args__ = (CheckConstraint("id = 1", name="ck_sync_run_singleton"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    running: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_weeks_scored: Mapped[int | None] = mapped_column(Integer)
+    last_reports: Mapped[list | None] = mapped_column(JSONB)
+    last_error: Mapped[str | None] = mapped_column(Text)

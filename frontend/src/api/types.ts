@@ -41,12 +41,7 @@ export interface CoverageRow {
   points_stored: number;
 }
 
-export interface SyncStatus {
-  connected: boolean;
-  data_types: CoverageRow[];
-}
-
-/** One data type's outcome from a POST /api/sync run. `parse_errors` counts
+/** One data type's outcome from the last completed sync run. `parse_errors` counts
  * records that failed to parse (not a list) — added to the backend after
  * the original schema draft. */
 export interface SyncReport {
@@ -56,9 +51,32 @@ export interface SyncReport {
   parse_errors: number;
 }
 
-export interface SyncTriggerResult {
-  weeks_scored: number;
-  reports: SyncReport[];
+/**
+ * State of the background sync job. POST /api/sync runs the sync in a FastAPI
+ * BackgroundTasks job rather than inline (worst case with the retry budget is
+ * minutes — too long for a synchronous "Syncing…" request) and returns immediately;
+ * this is what the Connection page polls via GET /api/sync/status until `running`
+ * goes back to false.
+ */
+export interface SyncRun {
+  running: boolean;
+  started_at: string | null;
+  finished_at: string | null;
+  last_weeks_scored: number | null;
+  last_reports: SyncReport[] | null;
+  last_error: string | null;
+}
+
+export interface SyncStatus {
+  connected: boolean;
+  data_types: CoverageRow[];
+  sync: SyncRun;
+}
+
+/** Immediate response to POST /api/sync — the run itself happens in the background;
+ * poll getSyncStatus() (SyncStatus.sync) for its outcome. */
+export interface SyncTriggerAck {
+  status: string;
 }
 
 export interface AuthStatus {

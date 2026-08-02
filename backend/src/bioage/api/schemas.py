@@ -89,6 +89,34 @@ class CoverageOut(BaseModel):
     points_stored: int
 
 
+class SyncReportOut(BaseModel):
+    data_type: str
+    days_written: int
+    error: str | None
+    parse_errors: int
+
+
+class SyncRunOut(BaseModel):
+    """State of the background sync job. POST /api/sync starts a run and returns
+    immediately; the frontend polls GET /api/sync/status, which embeds this, until
+    `running` goes back to false."""
+
+    running: bool
+    started_at: str | None
+    finished_at: str | None
+    last_weeks_scored: int | None
+    last_reports: list[SyncReportOut] | None
+    last_error: str | None
+
+
 class SyncStatusOut(BaseModel):
     connected: bool
     data_types: list[CoverageOut]
+    sync: SyncRunOut
+
+
+class SyncTriggerOut(BaseModel):
+    """Immediate response to POST /api/sync -- the run itself happens in the
+    background; poll GET /api/sync/status (SyncStatusOut.sync) for its outcome."""
+
+    status: str

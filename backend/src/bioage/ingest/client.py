@@ -108,8 +108,12 @@ class GoogleHealthClient:
                 result: dict[str, Any] = response.json()
                 return result
 
-            retry_after_refresh = self._force_refresh is not None and not refreshed_after_401
-            if response.status_code == 401 and retry_after_refresh:
+            force_refresh = self._force_refresh
+            if (
+                response.status_code == 401
+                and not refreshed_after_401
+                and force_refresh is not None
+            ):
                 # 401 is deliberately NOT in RETRYABLE_STATUSES: a permanently revoked
                 # token must not be retried five times with exponential backoff like a
                 # transient 5xx. This is a single forced-refresh retry, orthogonal to
@@ -118,7 +122,7 @@ class GoogleHealthClient:
                 # fresh token fixes it; if the refresh token itself is dead,
                 # force_refresh raises and that propagates immediately.
                 refreshed_after_401 = True
-                self._force_refresh()
+                force_refresh()
                 response = self._http.get(
                     url,
                     params=params,

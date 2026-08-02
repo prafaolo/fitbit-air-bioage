@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from datetime import UTC, date, datetime, timedelta
 
 import httpx
@@ -8,6 +9,7 @@ from fastapi.testclient import TestClient
 from bioage.api.app import create_app
 from bioage.api.deps import get_session
 from bioage.api.routes_auth import oauth_state_store
+from bioage.api.routes_sync import get_sync_session_cm
 from bioage.db.models import OAuthCredential
 from bioage.demo.generator import seed_demo
 from bioage.ingest.client import BASE_URL as HEALTH_API_BASE_URL
@@ -20,6 +22,13 @@ TOKEN_URL = "https://oauth2.googleapis.com/token"
 def client(db):
     app = create_app()
     app.dependency_overrides[get_session] = lambda: db
+    # The background sync job cannot use the request's own session (FastAPI closes it
+    # as soon as the endpoint returns, before background tasks run) -- production opens
+    # a brand-new one, but tests need the background task to observe and mutate the
+    # same transactional `db` fixture session the test itself asserts against, or data
+    # the test only flush()ed (never committed) into the outer test transaction would
+    # be invisible to a background task on its own connection. See routes_sync.py.
+    app.dependency_overrides[get_sync_session_cm] = lambda: (lambda: nullcontext(db))
     return TestClient(app)
 
 
@@ -147,6 +156,7 @@ def test_sync_status_reports_disconnected_before_oauth(client):
     body = client.get("/api/sync/status").json()
     assert body["connected"] is False
     assert any(d["data_type"] == "steps" for d in body["data_types"])
+    assert body["sync"]["running"] is False
 
 
 def test_sync_status_lists_vo2max_as_expected_empty(client):
@@ -178,11 +188,22 @@ def test_sync_returns_409_when_not_connected(client):
     assert client.post("/api/sync").status_code == 409
 
 
+def test_sync_returns_409_before_scheduling_any_background_work(client):
+    """The connected check must happen before the background task is scheduled, not
+    after -- confirmed here by no SyncRun row ever having been touched."""
+    response = client.post("/api/sync")
+    assert response.status_code == 409
+    status = client.get("/api/sync/status").json()["sync"]
+    assert status["running"] is False
+    assert status["started_at"] is None
+
+
 @respx.mock
-def test_sync_succeeds_when_connected_and_reports_parse_errors_per_type(client, db):
-    """The only prior sync test covered the 409 path; this covers the success response
-    shape, in particular `parse_errors` -- the field this task was specifically asked
-    to add to the response -- so renaming or dropping it would fail a test."""
+def test_sync_returns_202_and_completes_in_the_background(client, db):
+    """POST /api/sync must return promptly (202) rather than block for the whole sync
+    -- the outcome (including `parse_errors`, added so a caller can tell a parse
+    failure from a clean sync) is observed via GET /api/sync/status's `sync` field, not
+    the POST response body, since the work now runs in a background task."""
     db.add(
         OAuthCredential(
             id=1,
@@ -198,15 +219,55 @@ def test_sync_succeeds_when_connected_and_reports_parse_errors_per_type(client, 
     )
 
     response = client.post("/api/sync")
+    assert response.status_code == 202
+    assert response.json() == {"status": "started"}
 
-    assert response.status_code == 200
-    body = response.json()
-    assert "weeks_scored" in body
-    assert {r["data_type"] for r in body["reports"]} == {s.data_type_id for s in DATA_TYPES}
-    for report in body["reports"]:
+    # TestClient drives the ASGI app -- including its BackgroundTasks -- to completion
+    # before handing the response back here, so the background job has already run.
+    status = client.get("/api/sync/status").json()["sync"]
+    assert status["running"] is False
+    assert status["started_at"] is not None
+    assert status["finished_at"] is not None
+    assert status["last_error"] is None
+    assert status["last_weeks_scored"] is not None
+    reports = status["last_reports"]
+    assert {r["data_type"] for r in reports} == {s.data_type_id for s in DATA_TYPES}
+    for report in reports:
         assert report.keys() == {"data_type", "days_written", "error", "parse_errors"}
         assert report["parse_errors"] == 0
         assert report["error"] is None
+
+
+@respx.mock
+def test_background_sync_failure_clears_running_and_is_recorded(client, db, monkeypatch):
+    """If the background job dies unexpectedly, `running` must still clear -- otherwise
+    the frontend would poll "Syncing..." forever with no way to learn it failed."""
+    import bioage.api.routes_sync as routes_sync
+
+    db.add(
+        OAuthCredential(
+            id=1,
+            refresh_token="rt",
+            access_token="still-valid",
+            token_expiry=datetime.now(UTC) + timedelta(hours=1),
+            scopes=[],
+        )
+    )
+    db.flush()
+    respx.get(url__startswith=f"{HEALTH_API_BASE_URL}/users/me/dataTypes/").mock(
+        return_value=httpx.Response(200, json={"dataPoints": []})
+    )
+
+    def boom(session):
+        raise RuntimeError("scoring exploded")
+
+    monkeypatch.setattr(routes_sync, "rescore_all", boom)
+
+    client.post("/api/sync")
+
+    status = client.get("/api/sync/status").json()["sync"]
+    assert status["running"] is False
+    assert status["last_error"] == "scoring exploded"
 
 
 def test_auth_start_returns_503_without_google_credentials(client):

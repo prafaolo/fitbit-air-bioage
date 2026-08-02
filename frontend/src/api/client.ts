@@ -4,7 +4,7 @@ import type {
   Profile,
   SeriesPoint,
   SyncStatus,
-  SyncTriggerResult,
+  SyncTriggerAck,
   WeekDetail,
 } from "./types";
 
@@ -48,7 +48,9 @@ export const deleteMeasurement = (id: number) =>
 
 export const getSyncStatus = () => request<SyncStatus>("/api/sync/status");
 
-export const triggerSync = () => request<SyncTriggerResult>("/api/sync", { method: "POST" });
+/** Schedules the sync as a background job and returns as soon as it's queued (202) —
+ * the outcome is not in this response, poll getSyncStatus() (SyncStatus.sync) for it. */
+export const triggerSync = () => request<SyncTriggerAck>("/api/sync", { method: "POST" });
 
 export const getAuthStatus = () => request<AuthStatus>("/api/auth/google/status");
 
