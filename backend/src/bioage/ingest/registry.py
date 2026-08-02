@@ -44,7 +44,13 @@ SLEEP_SCOPE = "https://www.googleapis.com/auth/googlehealth.sleep.readonly"
 SCOPES = (METRICS_SCOPE, ACTIVITY_SCOPE, SLEEP_SCOPE)
 
 DEFAULT_WINDOW_DAYS = 90
-STEPS_WINDOW_DAYS = 14  # documented cap, unique to steps
+# Every data type registered here uses the 90-day cap. Google's data-types page
+# (https://developers.google.com/health/data-types, verified 2026-08-02) states verbatim:
+# "The maximum query range for calories-in-heart-rate-zone, heart-rate, active-minutes,
+# and total-calories is 14 days. The maximum query range for all other data types is
+# 90 days." None of those four types are registered here, so there is no 14-day special
+# case in this table -- an earlier version of this file wrongly capped `steps` at 14 days
+# based on a bad summarisation of that page; this note exists so nobody "fixes" it back.
 
 
 def _noop(_: dict[str, Any]) -> ParsedPoint | None:
@@ -85,9 +91,11 @@ DATA_TYPES: tuple[DataTypeSpec, ...] = (
         DEFAULT_WINDOW_DAYS, METRICS_SCOPE, parse_daily_sleep_temperature_derivations,
     ),
     # Verbatim in the list-method docs: steps.interval.civil_start_time >= "2023-11-24".
+    # 90-day cap like every other type here -- steps is NOT one of Google's four 14-day
+    # exceptions (see the DEFAULT_WINDOW_DAYS comment above).
     DataTypeSpec(
         "steps", "steps.interval.civil_start_time",
-        STEPS_WINDOW_DAYS, ACTIVITY_SCOPE, parse_steps,
+        DEFAULT_WINDOW_DAYS, ACTIVITY_SCOPE, parse_steps,
     ),
     # ActiveZoneMinutes' proto field is interval-typed (ObservationTimeInterval), same as
     # Steps; the interval.civil_start_time sub-path is documented as the generic pattern

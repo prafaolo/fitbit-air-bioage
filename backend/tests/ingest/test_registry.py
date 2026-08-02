@@ -7,17 +7,17 @@ ACTIVITY_SCOPE = "https://www.googleapis.com/auth/googlehealth.activity_and_fitn
 SLEEP_SCOPE = "https://www.googleapis.com/auth/googlehealth.sleep.readonly"
 
 
-def test_steps_is_capped_at_fourteen_days():
-    """The documented query range limit for steps is 14 days, unlike every other type."""
-    assert get_spec("steps").max_window_days == 14
-
-
 @pytest.mark.parametrize(
     "data_type",
     ["daily-resting-heart-rate", "daily-heart-rate-variability", "sleep",
-     "daily-respiratory-rate", "daily-oxygen-saturation"],
+     "daily-respiratory-rate", "daily-oxygen-saturation", "steps",
+     "active-zone-minutes", "weight", "height", "daily-vo2-max"],
 )
-def test_other_types_are_capped_at_ninety_days(data_type):
+def test_steps_is_capped_at_ninety_days_like_the_others(data_type):
+    """Google's documented 14-day cap applies only to calories-in-heart-rate-zone,
+    heart-rate, active-minutes and total-calories -- none of which are registered here.
+    Every data type in this registry, including steps, uses the 90-day cap.
+    """
     assert get_spec(data_type).max_window_days == 90
 
 
@@ -29,6 +29,29 @@ def test_every_spec_has_a_parser_and_a_scope():
     for spec in DATA_TYPES:
         assert callable(spec.parser)
         assert spec.scope.startswith("https://www.googleapis.com/auth/googlehealth.")
+
+
+EXPECTED_PARSER_NAMES = {
+    "daily-resting-heart-rate": "parse_daily_resting_heart_rate",
+    "daily-heart-rate-variability": "parse_daily_heart_rate_variability",
+    "daily-respiratory-rate": "parse_daily_respiratory_rate",
+    "daily-oxygen-saturation": "parse_daily_oxygen_saturation",
+    "daily-sleep-temperature-derivations": "parse_daily_sleep_temperature_derivations",
+    "steps": "parse_steps",
+    "active-zone-minutes": "parse_active_zone_minutes",
+    "sleep": "parse_sleep",
+    "weight": "parse_weight",
+    "height": "parse_height",
+    "daily-vo2-max": "_noop",
+}
+
+
+def test_each_spec_is_wired_to_its_own_parser():
+    """callable(spec.parser) alone would pass even if two types' parsers were swapped
+    (e.g. steps wired to parse_active_zone_minutes); check the wiring is correct too.
+    """
+    for spec in DATA_TYPES:
+        assert spec.parser.__name__ == EXPECTED_PARSER_NAMES[spec.data_type_id]
 
 
 def test_scopes_are_exactly_the_three_documented_read_scopes():
