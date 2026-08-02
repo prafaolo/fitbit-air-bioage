@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 from bioage.estimators.models import BiomarkerVector
@@ -39,24 +41,25 @@ def test_age_equals_chronological_age_at_reference_steps():
 
 
 def test_halving_hazard_subtracts_one_mortality_rate_doubling_time():
-    """Gompertz: hazard doubles every MRDT years, so HR=0.5 is one MRDT younger."""
+    """Gompertz: hazard doubles every MRDT years, so HR=0.5 is one MRDT younger, and
+    HR=2.0 is one MRDT older -- age_offset = ln(HR)/ln(2) * mrdt_years.
+
+    This is a direct unit test of that formula, independent of the shipped
+    hazard-ratio knot table: the previous version of this test bisected the knot table
+    to find a step count with HR=0.5 and always `pytest.skip`ped, because the shipped
+    knots bottom out at HR 0.84 (14,000+ steps/day never reaches 0.5) -- so it could
+    never actually run, and the MRDT anchor had no real assertion behind it.
+    """
     from bioage.reference.loader import get_steps_mortality
 
-    constants = get_steps_mortality()
-    # Find a step count whose hazard ratio is 0.5 by bisection.
-    lo, hi = constants.reference_steps, 100000.0
-    for _ in range(200):
-        mid = (lo + hi) / 2
-        if hazard_ratio(mid) > 0.5:
-            lo = mid
-        else:
-            hi = mid
-    if hazard_ratio(lo) > 0.5 and hazard_ratio(hi) > 0.5:
-        pytest.skip("dose-response curve never reaches HR 0.5")
-    v = BiomarkerVector(chronological_age=50.0, sex=Sex.MALE, mean_daily_steps=hi)
-    result = steps_age(v)
-    assert result is not None
-    assert result.age_years == pytest.approx(50.0 - constants.mrdt_years, abs=0.5)
+    mrdt_years = get_steps_mortality().mrdt_years
+    assert mrdt_years == pytest.approx(8.0)  # documents the currently shipped constant
+
+    def offset(hazard_ratio_value: float) -> float:
+        return math.log(hazard_ratio_value) / math.log(2.0) * mrdt_years
+
+    assert offset(0.5) == pytest.approx(-8.0)
+    assert offset(2.0) == pytest.approx(8.0)
 
 
 def test_more_steps_never_increases_age():

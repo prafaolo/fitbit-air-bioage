@@ -65,12 +65,51 @@ def test_low_confidence_widens_the_interval_and_sets_the_flag():
 
 
 def test_component_weights_from_reference_are_applied():
-    """Components listed in composite.yaml get their sigma scaled by the configured factor."""
+    """Components listed in composite.yaml get their sigma scaled by the configured
+    factor before inverse-variance weighting -- the multipliers carry a headline
+    honesty claim (HRV is downweighted most, composite.yaml's hrv_norm: 1.3 vs
+    everything else's 1.0/1.1), so this must prove the multiplier actually changes the
+    combined result, not merely that the YAML's keys are a subset of known component
+    names (which would pass even if combine() ignored sigma_multipliers entirely)."""
     from bioage.reference.loader import get_composite
 
-    assert set(get_composite().sigma_multipliers) <= {
-        "ntnu_fitness", "hrv_norm", "steps_mortality", "kdm"
-    }
+    multipliers = get_composite().sigma_multipliers
+    # hrv_norm's multiplier (1.3) is strictly the largest configured today -- pick it
+    # and any component with a strictly smaller one so the predicted pull direction is
+    # unambiguous. If this ever stops holding (e.g. the YAML changes), the test should
+    # fail loudly rather than silently comparing two equal multipliers.
+    lighter_component, lighter_multiplier = min(multipliers.items(), key=lambda kv: kv[1])
+    heavier_multiplier = multipliers["hrv_norm"]
+    assert heavier_multiplier > lighter_multiplier
+
+    base_sigma = 5.0
+    ages = {lighter_component: 30.0, "hrv_norm": 50.0}
+    result = combine([
+        r(lighter_component, ages[lighter_component], base_sigma),
+        r("hrv_norm", ages["hrv_norm"], base_sigma),
+    ])
+    assert result is not None
+
+    # Hand-computed inverse-variance combination using each component's own sigma
+    # scaled by its configured multiplier -- exactly what combine() is documented to
+    # do (bioage/estimators/composite.py).
+    weighted_sum = 0.0
+    weight_total = 0.0
+    for component, age in ages.items():
+        sigma = base_sigma * multipliers[component]
+        weight = 1.0 / sigma**2
+        weighted_sum += age * weight
+        weight_total += weight
+    expected_age = weighted_sum / weight_total
+
+    assert result.age_years == pytest.approx(expected_age)
+    # The component with the smaller multiplier (larger weight) must pull the result
+    # closer to its own age than an unweighted average would -- proving the multiplier
+    # was genuinely applied, not just present in the config.
+    unweighted_mean = sum(ages.values()) / len(ages)
+    assert abs(result.age_years - ages[lighter_component]) < abs(
+        unweighted_mean - ages[lighter_component]
+    )
 
 
 def test_estimate_all_drops_components_whose_inputs_are_missing():
