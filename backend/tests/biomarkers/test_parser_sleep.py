@@ -112,6 +112,30 @@ def test_zero_length_session_does_not_divide_by_zero() -> None:
     assert parse_sleep(point) is None
 
 
+def test_efficiency_over_100_percent_is_clamped_to_100() -> None:
+    """Stage durations are reported independently of the session interval, so a device
+    that reports slightly more asleep-stage time than the session spans (clock drift,
+    a stage overrunning the session boundary) would otherwise produce an efficiency
+    above 100% -- arithmetically valid, biologically meaningless, and this value flows
+    straight into KDM as a biomarker."""
+    point = {
+        "sleep": {
+            "session": {
+                "startTime": "2026-06-01T01:00:00Z",
+                "endTime": "2026-06-01T02:00:00Z",  # 60 minutes in bed
+            },
+            "sleepMetadata": {"stagesState": "STAGES_AVAILABLE"},
+            "sleepSummary": {
+                "totalDuration": "3600s",
+                "stageSummary": [{"stage": "LIGHT", "duration": "4200s"}],  # 70 minutes
+            },
+        }
+    }
+    parsed = parse_sleep(point)
+    assert parsed is not None
+    assert parsed.values["sleep_efficiency_pct"] == pytest.approx(100.0)
+
+
 def test_all_awake_night_yields_zero_efficiency_not_a_crash() -> None:
     point = {
         "sleep": {

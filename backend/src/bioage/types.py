@@ -33,9 +33,12 @@ class DateRange:
     def chunked(self, max_days: int) -> Iterator[DateRange]:
         """Split into contiguous sub-ranges of at most `max_days` each.
 
-        The Google Health API caps query ranges per data type (14 days for steps,
-        90 for the rest), so any backfill longer than the cap must be issued as
-        several sequential requests.
+        The Google Health API caps query ranges per data type -- every data type this
+        project reads uses the 90-day cap; only four types this project does not read
+        (calories-in-heart-rate-zone, heart-rate, active-minutes, total-calories) are
+        capped at 14 days (see backend/src/bioage/ingest/registry.py and
+        docs/METHODOLOGY.md §8.3) -- so any backfill longer than the applicable cap
+        must be issued as several sequential requests.
         """
         if max_days < 1:
             raise ValueError("max_days must be at least 1")

@@ -67,7 +67,15 @@ def parse_sleep(payload: dict[str, Any]) -> ParsedPoint | None:
                 durations[stage] = durations.get(stage, 0.0) + parse_duration_seconds(duration)
 
         asleep_seconds = sum(durations.get(stage, 0.0) for stage in ASLEEP_STAGES)
-        values["sleep_efficiency_pct"] = asleep_seconds / 60.0 / time_in_bed_min * 100.0
+        # Clamped to [0, 100]: stage durations are reported independently of the
+        # session interval, so a device that reports slightly more asleep-stage time
+        # than the session spans (clock drift between the two, or a stage that
+        # overruns the session boundary) would otherwise produce >100% efficiency --
+        # arithmetically valid here, but meaningless, and it flows straight into KDM
+        # as a biomarker (bioage.estimators.kdm), where an implausible value skews the
+        # estimate rather than just looking wrong in a UI.
+        efficiency = asleep_seconds / 60.0 / time_in_bed_min * 100.0
+        values["sleep_efficiency_pct"] = min(max(efficiency, 0.0), 100.0)
 
         if asleep_seconds > 0:
             values["deep_pct"] = durations.get("DEEP", 0.0) / asleep_seconds * 100.0
