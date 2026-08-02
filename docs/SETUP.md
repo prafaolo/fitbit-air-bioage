@@ -283,3 +283,20 @@ environment. That volume is **not** recreated by a normal `docker compose down` 
 change `pyproject.toml` and the container still runs old dependencies, the stale volume
 is why. Fix: `docker compose down -v` (this also wipes the Postgres data — reseed or
 re-sync afterward) and rebuild.
+
+The `frontend` service has the same shape of volume, for the same reason: it
+bind-mounts `./frontend` but keeps `/app/node_modules` as its own anonymous volume, so
+the container's Linux-native `npm install` output never lands in your host's
+`frontend/node_modules` (which would otherwise break a host-side `npm test` or
+`npm run build` on macOS/Windows with an esbuild/rollup platform-mismatch error — see
+below). If `package.json` changes and the container's dependencies look stale, the same
+`docker compose down -v` fix applies.
+
+**`npm test` or `npm run build` fails with an esbuild/rollup "wrong platform" error**
+`frontend/node_modules` on your host got populated with Linux binaries — almost always
+because `docker compose up` was run *before* the `/app/node_modules` anonymous-volume
+fix above existed, or because `npm install` was run directly inside the container
+without that volume in place at the time. Fix: delete `frontend/node_modules` on your
+host (`rm -rf frontend/node_modules`) and either run `npm install` directly on your host
+machine, or let the container reinstall it into its own volume on the next
+`docker compose up`.

@@ -38,6 +38,13 @@ services:
       VITE_API_BASE: http://localhost:8000
     volumes:
       - ./frontend:/app
+      # Anonymous volume so the container's own (Linux) node_modules doesn't land in
+      # the host bind mount, mirroring the backend service's /app/.venv volume above --
+      # without it, `npm install` here writes Linux-native binaries (esbuild, rollup)
+      # into the host's frontend/node_modules, and a host-side `npm test`/`npm run
+      # build` (e.g. right after this quickstart, per the README) fails with a
+      # platform-mismatch error on macOS/Windows.
+      - /app/node_modules
     ports:
       - "127.0.0.1:5173:5173"
     depends_on:
