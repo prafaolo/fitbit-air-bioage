@@ -91,13 +91,14 @@ def test_rescore_all_overwrites_rather_than_duplicating(populated):
     rescore_all(populated)
     populated.flush()
     before = populated.query(BioAgeScore).order_by(BioAgeScore.week_start).first()
+    before_week, before_age = before.week_start, before.composite_age
     populated.query(DailyMetric).update({DailyMetric.resting_hr_bpm: 80.0})
     populated.flush()
     rescore_all(populated)
     populated.flush()
     after = populated.query(BioAgeScore).order_by(BioAgeScore.week_start).first()
-    assert after.week_start == before.week_start
-    assert after.composite_age != pytest.approx(before.composite_age)
+    assert after.week_start == before_week
+    assert after.composite_age != pytest.approx(before_age)
 
 
 def test_a_healthier_profile_scores_younger(db):

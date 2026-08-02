@@ -88,17 +88,7 @@ def score_week(
     if composite is None:
         return None
 
-    # If an instance for this week is already tracked by the session (e.g. a caller
-    # holds a reference from an earlier rescore, or this is a re-run), detach it before
-    # writing. SQLAlchemy's identity map guarantees a single Python object per primary
-    # key per session; mutating that shared object in place would silently rewrite the
-    # attributes out from under anyone still holding the old reference, making "before"
-    # and "after" snapshots alias the same object instead of reflecting distinct states.
-    existing = session.get(BioAgeScore, week_start)
-    if existing is not None:
-        session.expunge(existing)
-
-    score = BioAgeScore(week_start=week_start)
+    score = session.get(BioAgeScore, week_start) or BioAgeScore(week_start=week_start)
     score.chronological_age = chronological_age
     score.composite_age = composite.age_years
     score.ci_low = composite.ci_low
@@ -106,7 +96,8 @@ def score_week(
     score.components = [asdict(c) for c in composite.components]
     score.coverage = coverage.as_dict()
     score.is_low_confidence = composite.is_low_confidence
-    return session.merge(score)
+    session.merge(score)
+    return score
 
 
 def rescore_all(session: Session) -> int:
