@@ -1,5 +1,5 @@
 source: >-
-  Weighting follows the reliability guidance in reference-research-from-claude.md: resting
+  Weighting follows the reliability guidance in docs/reference-research-from-claude.md: resting
   heart rate, HRV trend and step volume carry the most signal; wrist-PPG HRV is noisier
   than ECG and is downweighted accordingly. SpO2 and skin temperature are deliberately
   excluded as age components and surface only as trend context.

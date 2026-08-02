@@ -126,7 +126,7 @@ def test_kdm_age_worsening_every_biomarker_increases_the_estimate():
 def test_the_source_documents_denominator_does_not_satisfy_the_identity():
     """Regression guard: sum((k/s^2)^2) is the wrong denominator.
 
-    reference-research-from-claude.md prints it that way. This test exercises the actual
+    docs/reference-research-from-claude.md prints it that way. This test exercises the actual
     implementation (kdm_bio_age) and asserts it recovers the exact age -- which fails if
     the implementation's denominator is ever reverted to sum((k/s^2)^2) -- alongside an
     inline recomputation showing that wrong denominator does not recover the age either.
