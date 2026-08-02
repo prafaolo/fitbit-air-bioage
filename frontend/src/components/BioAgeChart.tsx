@@ -47,12 +47,41 @@ const COMPONENT_COLORS: Record<string, string> = {
   kdm: "#d55181", // slot 5 (magenta)
 };
 
+/**
+ * Secondary encoding for the component lines, on top of hue. The validator
+ * passed the categorical set with its worst adjacent pair (amber vs. teal) at
+ * CVD ΔE 8.4 — inside the target band, but close enough that a protan/tritan
+ * viewer with two components toggled on benefits from a second channel. Solid
+ * is reserved for the composite (the emphasis series), so components each get
+ * a distinct dash pattern; the legend swatch mirrors it exactly (both are
+ * driven by this same prop on <Line>, see renderLegend).
+ */
+const COMPONENT_DASH: Record<string, string> = {
+  ntnu_fitness: "5 3",
+  hrv_norm: "1 3",
+  steps_mortality: "8 3 2 3",
+  kdm: "11 3",
+};
+
 const COMPONENT_LABELS: Record<string, string> = {
   kdm: "KDM",
   ntnu_fitness: "Fitness age (NTNU)",
   hrv_norm: "HRV age",
   steps_mortality: "Step-count age",
 };
+
+/**
+ * A component's 95% interval from its own sigma_years (age ± 1.96·sigma —
+ * same z-score the backend composite uses, see
+ * backend/src/bioage/reference/composite.yaml). No estimate is rendered
+ * without its uncertainty; components don't get a fifth shaded band (that
+ * would bury the composite), so their interval surfaces on hover instead.
+ */
+function componentInterval(age: number, sigma: number | undefined): string | null {
+  if (sigma === undefined || !Number.isFinite(sigma)) return null;
+  const halfWidth = 1.96 * sigma;
+  return `${formatYears(age - halfWidth)} – ${formatYears(age + halfWidth)}`;
+}
 
 /**
  * A data key's color for legend/tooltip line-keys. The low-confidence marker
@@ -85,14 +114,21 @@ interface LegendEntry {
   type?: string;
   color?: string;
   dataKey?: unknown;
+  /** Recharts attaches the originating <Line>/<Area>/<Scatter>'s own props
+   * here (see recharts/lib/util/getLegendProps.js), including strokeDasharray
+   * — reading it back out keeps the legend's dash pattern and the plot's
+   * dash pattern structurally the same value, not two numbers kept in sync
+   * by convention. */
+  payload?: { strokeDasharray?: string | number };
 }
 
 /**
- * Custom legend content: the swatch carries the series color, the text
- * never does ("Text never wears the data color" — marks-and-anatomy.md).
- * Recharts' default legend colors both by the mark's own fill, which is
- * how the hollow low-confidence marker's surface-colored fill silently
- * produced invisible legend/tooltip text — this sidesteps that entirely.
+ * Custom legend content: the swatch carries the series color (and, for
+ * component lines, the same dash pattern drawn on the chart), the text never
+ * does ("Text never wears the data color" — marks-and-anatomy.md). Recharts'
+ * default legend colors both by the mark's own fill, which is how the
+ * hollow low-confidence marker's surface-colored fill silently produced
+ * invisible legend/tooltip text — this sidesteps that entirely.
  */
 function renderLegend({ payload }: { payload?: LegendEntry[] }) {
   if (!payload || payload.length === 0) return null;
@@ -100,15 +136,27 @@ function renderLegend({ payload }: { payload?: LegendEntry[] }) {
     <ul className="chart-legend">
       {payload.map((entry) => {
         const color = colorForDataKey(entry.dataKey) || entry.color || CHART_MUTED;
+        const dash = entry.payload?.strokeDasharray;
         return (
           <li key={String(entry.value)}>
-            {entry.type === "rect" ? (
-              <span className="chart-legend-swatch chart-legend-swatch--rect" style={{ background: color }} />
-            ) : entry.type === "circle" ? (
-              <span className="chart-legend-swatch chart-legend-swatch--ring" style={{ borderColor: color }} />
-            ) : (
-              <span className="chart-legend-swatch chart-legend-swatch--line" style={{ background: color }} />
-            )}
+            <svg className="chart-legend-swatch" width="16" height="12" aria-hidden="true">
+              {entry.type === "rect" ? (
+                <rect x="1" y="3" width="14" height="7" rx="1.5" fill={color} />
+              ) : entry.type === "circle" ? (
+                <circle cx="8" cy="6" r="4" fill="none" stroke={color} strokeWidth="1.5" />
+              ) : (
+                <line
+                  x1="0"
+                  y1="6"
+                  x2="16"
+                  y2="6"
+                  stroke={color}
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeDasharray={dash}
+                />
+              )}
+            </svg>
             {entry.value}
           </li>
         );
@@ -121,6 +169,13 @@ function renderLegend({ payload }: { payload?: LegendEntry[] }) {
  * Custom tooltip content, per the dataviz skill: values lead (Strong,
  * high-contrast), the series name follows (secondary ink), and each row
  * keys on a short stroke of the series color rather than a filled box.
+ *
+ * Component rows also carry their own 95% interval in parentheses — the
+ * chart draws components as plain lines (four more shaded bands would make
+ * it unreadable), so the uncertainty has to live somewhere, and it can never
+ * simply be omitted. `entry.payload` is Recharts' full data row at that X
+ * (see DefaultTooltipContent's `payload?: any`), which is where the
+ * `s_<key>` sigma flattened alongside each `c_<key>` age actually lives.
  */
 function renderTooltip({ active, label, payload }: TooltipProps<number | [number, number], string>) {
   if (!active || !payload || payload.length === 0) return null;
@@ -129,17 +184,24 @@ function renderTooltip({ active, label, payload }: TooltipProps<number | [number
       <p className="chart-tooltip-label">Week of {label}</p>
       <ul>
         {payload.map((entry) => {
+          const dataKey = typeof entry.dataKey === "string" ? entry.dataKey : "";
           const value = entry.value;
           const text = Array.isArray(value)
             ? `${formatYears(value[0])} – ${formatYears(value[1])}`
             : formatYears(value as number);
+          const componentKey = dataKey.startsWith("c_") ? dataKey.slice(2) : null;
+          const interval =
+            componentKey && typeof value === "number"
+              ? componentInterval(value, entry.payload?.[`s_${componentKey}`])
+              : null;
           return (
-            <li key={String(entry.dataKey)}>
+            <li key={dataKey}>
               <span
                 className="chart-legend-swatch chart-legend-swatch--line"
                 style={{ background: colorForDataKey(entry.dataKey) }}
               />
               <strong>{text}</strong>
+              {interval && <span className="chart-tooltip-interval">({interval})</span>}
               <span className="chart-tooltip-name">{entry.name}</span>
             </li>
           );
@@ -165,6 +227,12 @@ export function BioAgeChart({ points, visibleComponents }: Props) {
     ...row,
     ...Object.fromEntries(
       Object.entries(row.componentAges).map(([key, value]) => [`c_${key}`, value]),
+    ),
+    // Sigma travels alongside each component's age under a matching `s_`
+    // key so the tooltip (which receives the full row via entry.payload)
+    // can compute that component's own interval without a second lookup.
+    ...Object.fromEntries(
+      Object.entries(row.componentSigmas).map(([key, value]) => [`s_${key}`, value]),
     ),
     lowConfidencePoint: row.lowConfidence ? row.bioAge : undefined,
   }));
@@ -246,6 +314,7 @@ export function BioAgeChart({ points, visibleComponents }: Props) {
             name={COMPONENT_LABELS[key] ?? key}
             stroke={COMPONENT_COLORS[key] ?? CHART_MUTED}
             strokeWidth={2}
+            strokeDasharray={COMPONENT_DASH[key]}
             dot={false}
             isAnimationActive={false}
           />

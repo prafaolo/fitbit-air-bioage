@@ -80,13 +80,12 @@ h1 { font-size: 22px; margin: 0 0 4px; }
 }
 .chart-legend li { display: flex; align-items: center; gap: 6px; }
 
+/* The legend swatch is an inline <svg> (see renderLegend) so a component
+   line's dash pattern renders pixel-for-pixel the same as on the plot —
+   not a CSS approximation of it. The tooltip's line-key is simpler (a
+   plain colored stroke, per interaction.md) and stays a CSS bar. */
 .chart-legend-swatch { display: inline-block; flex: none; }
 .chart-legend-swatch--line { width: 12px; height: 2px; border-radius: 1px; }
-.chart-legend-swatch--rect { width: 10px; height: 10px; border-radius: 2px; }
-.chart-legend-swatch--ring {
-  width: 8px; height: 8px; border-radius: 50%;
-  border: 1.5px solid; background: transparent;
-}
 
 .chart-tooltip {
   background: var(--bg);
@@ -99,6 +98,10 @@ h1 { font-size: 22px; margin: 0 0 4px; }
 .chart-tooltip ul { list-style: none; margin: 0; padding: 0; }
 .chart-tooltip li { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
 .chart-tooltip li strong { color: var(--fg); font-weight: 600; }
+/* A component line's own 95% interval (age ± 1.96·sigma) — no estimate is
+   shown without its uncertainty, and components don't get a shaded band of
+   their own, so it rides along in the tooltip instead. */
+.chart-tooltip-interval { color: var(--muted); font-size: 12px; }
 .chart-tooltip-name { color: var(--fg-secondary); }
 
 table { width: 100%; border-collapse: collapse; font-size: 14px; }

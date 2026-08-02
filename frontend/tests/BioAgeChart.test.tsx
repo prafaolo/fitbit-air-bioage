@@ -49,4 +49,57 @@ describe("BioAgeChart", () => {
     );
     expect(container.querySelector(".recharts-responsive-container")).not.toBeNull();
   });
+
+  // The four tests above only prove the chart *region* exists, the y-axis
+  // label renders, and nothing throws — none of them prove a single series
+  // actually drew a mark. Recharts renders real SVG in jsdom (confirmed by
+  // dumping container.innerHTML during development — <path>/<circle>
+  // elements with the same name/stroke/fill/dataKey props passed to
+  // <Line>/<Area>/<Scatter>), so these query that SVG directly rather than
+  // asserting only on chrome that would still be present if every series
+  // silently failed to render.
+
+  it("renders the biological age line, the dashed chronological reference, and the confidence band", () => {
+    const { container } = render(
+      <BioAgeChart points={points} visibleComponents={[]} />,
+    );
+    expect(container.querySelector('path[name="Biological age"]')).not.toBeNull();
+    const chronoLine = container.querySelector('path[name="Chronological age"]');
+    expect(chronoLine).not.toBeNull();
+    expect(chronoLine?.getAttribute("stroke-dasharray")).toBe("6 4");
+    const band = container.querySelector('path[name="95% interval"]');
+    expect(band).not.toBeNull();
+    expect(band?.getAttribute("fill-opacity")).toBe("0.1");
+  });
+
+  it("renders the low-confidence week's marker hollow, not filled", () => {
+    const { container } = render(
+      <BioAgeChart points={points} visibleComponents={[]} />,
+    );
+    // Only the second fixture point has is_low_confidence: true, so exactly
+    // one marker should exist — the low-confidence Scatter series has no
+    // value (undefined) for the first row, so Recharts draws nothing there.
+    const markers = container.querySelectorAll('path[name="Low data coverage"]');
+    expect(markers).toHaveLength(1);
+    const [marker] = markers;
+    // Hollow means the fill matches the dark chart surface (so the marker
+    // reads as an outline), not the accent color used for its stroke —
+    // the brief's own placeholder code used fill="#ffffff", which would
+    // have rendered a solid white dot on this dark surface instead.
+    expect(marker.getAttribute("fill")).toBe("#1a1a19");
+    expect(marker.getAttribute("stroke")).toBe("#3987e5");
+    expect(marker.getAttribute("fill")).not.toBe(marker.getAttribute("stroke"));
+  });
+
+  it("renders a line for a toggled-on component, and none when no components are visible", () => {
+    const { container: withKdm } = render(
+      <BioAgeChart points={points} visibleComponents={["kdm"]} />,
+    );
+    expect(withKdm.querySelector('path[name="KDM"]')).not.toBeNull();
+
+    const { container: withoutKdm } = render(
+      <BioAgeChart points={points} visibleComponents={[]} />,
+    );
+    expect(withoutKdm.querySelector('path[name="KDM"]')).toBeNull();
+  });
 });

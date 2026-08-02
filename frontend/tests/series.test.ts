@@ -45,6 +45,17 @@ describe("toChartRows", () => {
     expect(row.componentAges.hrv_norm).toBeCloseTo(32.0);
   });
 
+  it("flattens component sigmas into keyed fields alongside their ages", () => {
+    const [row] = toChartRows([point()]);
+    expect(row.componentSigmas.kdm).toBeCloseTo(6.5);
+    expect(row.componentSigmas.hrv_norm).toBeCloseTo(7.0);
+  });
+
+  it("tolerates a point with no components when flattening sigmas", () => {
+    const [row] = toChartRows([point({ components: [] })]);
+    expect(row.componentSigmas).toEqual({});
+  });
+
   it("preserves input order", () => {
     const rows = toChartRows([
       point({ week_start: "2026-06-01" }),
