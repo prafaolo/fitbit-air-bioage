@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - **Python 3.12+**, dependency management via **uv** only. Never invoke `pip` directly.
-- **All scientific logic in `estimators/` and `biomarkers/features.py` must be pure** — no database, network, filesystem, or clock access. They take dataclasses and return dataclasses. This is enforced by those modules importing nothing from `bioage.db`, `bioage.api`, or `bioage.ingest`.
+- **All scientific logic in `estimators/` and `biomarkers/features.py` must be pure** — no database, network, or clock access, and no mutable global state. They take dataclasses and return dataclasses. Reading bundled reference constants is permitted, but *only* through the cached `bioage.reference.loader` accessors (`get_ntnu()`, `get_kdm()`, …) — never by opening files directly. Enforced by those modules importing nothing from `bioage.db`, `bioage.api`, or `bioage.ingest`.
 - **Every numeric constant in `reference/*.yaml` carries a `source` citation string.** Derived constants additionally carry `derived: true`.
 - **Google Health API base URL is `https://health.googleapis.com/v4`.** Not `healthapi.googleapis.com`.
 - **Proto JSON encoding:** `Date` is `{"year": int, "month": int, "day": int}`; `Duration` is a string like `"28800s"`; `int64` fields arrive as **strings**. Parsers must coerce.
@@ -23,7 +23,8 @@
   - `https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly`
   - `https://www.googleapis.com/auth/googlehealth.sleep.readonly`
 - **No estimate is ever returned or rendered without a confidence interval.**
-- Line length 100, formatted and linted with `ruff`. Type-checked with `mypy --strict` on `src/bioage/estimators/` and `src/bioage/biomarkers/`.
+- Line length 100, formatted and linted with `ruff`. Type-checked with `mypy --strict` on `src/bioage/estimators/`, `src/bioage/biomarkers/`, and `src/bioage/reference/`.
+- **`--strict` enables `disallow_any_generics`, so bare `dict`/`list` annotations fail.** Every generic must be parameterised: JSON payload arguments are `dict[str, Any]`, never `dict`. This applies to all parser signatures.
 - Commit after every task. Conventional Commit prefixes (`feat:`, `test:`, `chore:`, `docs:`, `fix:`).
 
 ## File Structure
