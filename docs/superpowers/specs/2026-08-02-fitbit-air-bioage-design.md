@@ -105,7 +105,11 @@ A `DATA_TYPES` registry is the single source of truth, one entry per data type h
 Data types consumed:
 
 - `daily-resting-heart-rate` — primary signal
-- `daily-heart-rate-variability` — primary signal (nightly RMSSD)
+- `daily-heart-rate-variability` — primary signal. Verified against the live RPC reference:
+  this type exposes `deepSleepRootMeanSquareOfSuccessiveDifferencesMilliseconds` (true
+  nightly RMSSD, the input the HRV-norm estimator wants) alongside
+  `averageHeartRateVariabilityMilliseconds`, `nonRemHeartRateBeatsPerMinute`, and `entropy`.
+  RMSSD is used as the primary HRV input, with the average as fallback.
 - `steps` — primary signal (14-day query cap)
 - `sleep` — architecture, efficiency, regularity
 - `daily-respiratory-rate` — secondary
@@ -173,6 +177,24 @@ daily_metrics(date PK, rhr_bpm, hrv_rmssd_ms, steps, active_zone_minutes,
 
 `sleep_midpoint_local_min` (minutes past local midnight) is retained specifically to
 support the sleep-regularity feature.
+
+**Sleep efficiency and WASO are derived, not provided.** The live `Sleep` message carries
+only `session` (start/end), `sleepSummary.totalDuration`, and per-stage durations in
+`sleepSummary.stageSummary[]` plus a `sleepStages[]` timeline. Therefore:
+
+- `time_in_bed = session.endTime − session.startTime`
+- `asleep = LIGHT + DEEP + REM stage durations`
+- `sleep_efficiency_pct = asleep / time_in_bed × 100`
+- `waso_min = AWAKE stage durations occurring strictly between the first and last
+  non-awake stage` (leading/trailing wakefulness is not WASO)
+- `deep_pct`, `rem_pct` are fractions of `asleep`, not of `time_in_bed`
+
+Records with `sleepMetadata.stagesState != STAGES_AVAILABLE` yield duration only; stage
+derived fields are null and those nights are excluded from stage-dependent features.
+
+Proto JSON encoding notes the parsers must honour: `Date` is `{year, month, day}` (not an
+ISO string), `Duration` is a string like `"28800s"`, and `int64` fields
+(`beatsPerMinute`, step `count`) arrive as **strings**, not numbers.
 
 ### Stage 4 — Score
 
@@ -253,11 +275,20 @@ Generic over a set of `BiomarkerReference(q, k, s)` per biomarker j, where the r
 population satisfies `x_j = q_j + k_j·age + s_j`:
 
 ```
-BA_E = Σⱼ (xⱼ − qⱼ)(kⱼ/sⱼ²) / Σⱼ (kⱼ/sⱼ²)²
+BA_E = Σⱼ [(xⱼ − qⱼ)·kⱼ/sⱼ²] / Σⱼ [kⱼ²/sⱼ²]
 ```
 
-with the corrected form `BA_EC` incorporating the characteristic variance s²_BA to shrink
-toward chronological age.
+with the corrected form incorporating the characteristic variance s²_BA to shrink toward
+chronological age (CA):
+
+```
+BA_EC = [ Σⱼ((xⱼ−qⱼ)kⱼ/sⱼ²) + CA/s²_BA ] / [ Σⱼ(kⱼ²/sⱼ²) + 1/s²_BA ]
+```
+
+> **Correction.** `reference-research-from-claude.md` states the denominator as
+> `Σⱼ(kⱼ/sⱼ²)²`. That is incorrect: a subject lying exactly on the reference regression
+> (`xⱼ = qⱼ + kⱼ·A` for all j) must yield `BA_E = A`, and only the `Σ kⱼ²/sⱼ²` denominator
+> satisfies that identity. The identity is enforced as a required unit test.
 
 Biomarkers used: RHR, BMI, HRV RMSSD, mean daily steps, sleep efficiency.
 
