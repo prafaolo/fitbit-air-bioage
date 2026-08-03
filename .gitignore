@@ -9,12 +9,6 @@ dist/
 .mypy_cache/
 client_secret.json
 *.tsbuildinfo
-
-# Working documents kept locally, not published:
-# the original research input and the spec/plan that drove implementation.
-# docs/METHODOLOGY.md is the authoritative record of what the code does.
 docs/reference-research-from-claude.md
 docs/superpowers/
-
-# Vite build cache
 frontend/.vite/
