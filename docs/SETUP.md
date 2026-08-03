@@ -173,12 +173,38 @@ docker compose restart backend
 5. Click **Sync now**. This pulls your historical data (up to `BACKFILL_DAYS`, 90 days
    by default) from Google Health and computes weekly scores from whatever is there.
 
-## 10. Enter your profile
+## 10. Clear the demo data
+
+Step 2 seeded 400 days of synthetic history so you could see the app working before
+touching Google Cloud. Those rows sit in the same table as your real ones and are
+indistinguishable from them, so after your first real sync your chart will show more
+than a year of history that never happened.
+
+Clear it once, after your first successful sync:
+
+```bash
+docker compose exec backend uv run python -m bioage.cli rebuild
+```
+
+This deletes every derived daily metric and weekly score, then rebuilds them purely from
+the raw API payloads your sync stored. Your credentials, profile and measurements are
+untouched, and it makes no network calls — re-deriving from the raw archive rather than
+re-fetching is exactly why raw payloads are stored before parsing.
+
+Run it again any time you want to be certain nothing synthetic is left, or after
+upgrading if a parser changed.
+
+## 11. Enter your profile
 
 Open **http://localhost:5173/profile** and fill in:
 
 - **Sex** and **birthdate** — used directly by the age estimators.
-- **Height** and **weight** — added as dated measurements.
+- **Height** and **weight** — added as dated measurements. **Height is in metres**, so
+  a 1.90 m person enters `1.9`, not `190`. Entering centimetres here produces a BMI of
+  roughly 0.002, which silently corrupts one of the five KDM biomarkers. If Google Health
+  already holds your height and weight (the Fitbit app syncs them), you can leave both
+  blank — the app reads them from the API and only prefers a manual entry when one
+  exists.
 - **Waist circumference** — also added as a dated measurement. **Measure this yourself
   with a tape measure, at the navel**, standing relaxed (not sucked in). Nothing on your
   wrist can measure this, and the non-exercise fitness-age equation (from NTNU) requires
@@ -188,7 +214,14 @@ Each measurement is dated, so if you re-measure your waist in six months, old we
 scores keep using whatever value was current for them at the time — they don't silently
 change.
 
-## 11. Optional: automatic daily sync
+That dating has a consequence worth knowing on your first run: a measurement dated today
+applies only to weeks ending today or later. Earlier weeks see no waist value at all, so
+the fitness-age estimator cannot run for them and those weeks score from three components
+instead of four. If your waist has not meaningfully changed over the history you have
+synced, **set the measurement date to roughly when your device data starts** rather than
+today, so it covers the whole chart.
+
+## 12. Optional: automatic daily sync
 
 By default the app only syncs when you click "Sync now." To have it pull new data
 automatically every day, set in `.env`:

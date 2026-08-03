@@ -78,3 +78,41 @@ def test_seed_demo_is_rerunnable(db):
     seed_demo(db, days=120)
     db.flush()
     assert db.query(DailyMetric).count() == first
+
+
+def test_rebuild_discards_demo_rows_and_rederives_only_from_raw(db):
+    """`bioage rebuild` is the escape hatch from SETUP.md's demo-first flow.
+
+    `seed_demo` writes straight into `daily_metrics`, so its rows are indistinguishable
+    from parsed real ones and linger after a real sync. Rebuild drops every derived row
+    and re-parses `raw_data_points`, which only ever holds real API payloads.
+    """
+    from datetime import date
+
+    from bioage.db.models import BioAgeScore, DailyMetric, RawDataPoint
+    from bioage.ingest.sync import normalize_all
+
+    seed_demo(db, days=200)
+    db.flush()
+    assert db.query(DailyMetric).count() == 200
+    assert db.query(BioAgeScore).count() > 0
+
+    db.add(RawDataPoint(
+        data_type="daily-resting-heart-rate",
+        point_date=date(2026, 7, 9),
+        payload_hash="rebuildtest",
+        payload={"dailyRestingHeartRate": {
+            "date": {"year": 2026, "month": 7, "day": 9}, "beatsPerMinute": "55"}},
+    ))
+    db.flush()
+
+    db.query(BioAgeScore).delete()
+    db.query(DailyMetric).delete()
+    db.flush()
+    normalize_all(db)
+    db.flush()
+
+    remaining = db.query(DailyMetric).all()
+    assert len(remaining) == 1
+    assert remaining[0].date == date(2026, 7, 9)
+    assert remaining[0].resting_hr_bpm == 55.0
