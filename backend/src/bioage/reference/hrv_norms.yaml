@@ -1,6 +1,6 @@
 source: >-
   DERIVED. Log-linear fit through nightly RMSSD normative medians reported in
-  docs/reference-research-from-claude.md (approx. 60 ms at 25y, 43 ms in the 40s, 34 ms in the
+  the project's source-research note (kept privately; see METHODOLOGY.md §8) (approx. 60 ms at 25y, 43 ms in the 40s, 34 ms in the
   50s, 31 ms in the 60s), consistent with the widely reported 1-3%/year decline in RMSSD
   after the mid-20s. Coefficients satisfy ln(RMSSD) = intercept + slope * age and were
   obtained by ordinary least squares of ln(RMSSD) on age over the four normative points

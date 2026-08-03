@@ -650,8 +650,8 @@ instead.
 
 ### 8.1 The KDM denominator
 
-The project's own source-research document, `docs/reference-research-from-claude.md`, prints
-the Klemera–Doubal denominator incorrectly. It states (line 132):
+The project's own source-research document — a working note that seeded this design and is
+kept outside the repository — prints the Klemera–Doubal denominator incorrectly. It states:
 
 ```
 BA_E = [ Σ_j (x_j − q_j)(k_j / s_j²) ] / [ Σ_j (k_j / s_j²)² ]
@@ -682,10 +682,9 @@ the identity (asserting it holds) and separately recomputes the source document'
 denominator inline to show it does not recover the age. If anyone ever "fixes" the
 implementation back to match the source document's printed formula, this test fails.
 
-`docs/reference-research-from-claude.md` is kept in the repository unmodified, as a
-historical record of the research that seeded this project's design — it is not
-corrected in place.
-This document, and the code, are the authoritative statement of the actual formula.
+That source-research note is retained privately as a historical record and is not
+corrected in place. This document, and the code, are the authoritative statement of the
+actual formula.
 
 ### 8.2 The HRV RMSSD log-linear fit
 

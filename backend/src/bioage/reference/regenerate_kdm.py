@@ -36,8 +36,9 @@ NORMS: dict[str, _NormSpec] = {
     },
     "hrv_rmssd_ms": {
         "source": (
-            "Nightly RMSSD normative medians from docs/reference-research-from-claude.md, "
-            "consistent with a 1-3%/year decline after the mid-20s."
+            "Nightly RMSSD normative medians from the project's source-research note "
+            "(kept privately; see METHODOLOGY.md §8), consistent with a 1-3%/year "
+            "decline after the mid-20s."
         ),
         "points": [(25.0, 60.0, 22.0), (35.0, 50.0, 19.0), (45.0, 43.0, 16.0),
                    (55.0, 34.0, 13.0), (65.0, 31.0, 12.0), (75.0, 28.0, 11.0)],
