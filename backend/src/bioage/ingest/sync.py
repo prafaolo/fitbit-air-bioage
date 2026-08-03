@@ -39,11 +39,51 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from bioage.db.models import DailyMetric, RawDataPoint, SyncState
+from bioage.db.models import (
+    BioAgeScore,
+    DailyMetric,
+    Measurement,
+    Profile,
+    RawDataPoint,
+    SyncState,
+)
 from bioage.ingest.registry import DATA_TYPES, DataTypeSpec, get_spec
 from bioage.types import DateRange
 
 logger = logging.getLogger(__name__)
+
+# Every table `seed_demo` writes to. `raw_data_points` is deliberately absent: seed_demo
+# never writes there, so it holds no demo rows to evict.
+_DEMO_TAGGED_MODELS = (DailyMetric, BioAgeScore, Measurement, Profile)
+
+
+def evict_demo_data(session: Session) -> int:
+    """Delete every `is_demo=True` row across all four provenance-tracked tables.
+
+    Called once at the start of a sync run (see `SyncService.sync_all`), before any
+    real payload is written, so demo history never sits alongside real data even for a
+    single request. Deleting the demo `Profile` row is intentional, not collateral: the
+    Profile page already treats a missing profile as a normal first-run state, which is
+    a far better failure mode than silently scoring every week against a fake
+    birthdate. Returns the number of rows deleted; 0 (the common case once a database
+    has been synced once for real) means nothing was evicted and nothing is logged.
+    """
+    # Deliberately not synchronize_session=False: a Profile row deleted this way must
+    # actually vanish from the session's identity map too, or a later session.get(
+    # Profile, 1) in the same session/request (as resolve_profile does) would return a
+    # stale, already-deleted instance instead of None -- silently resurrecting exactly
+    # the bug this function exists to close. The default ("auto"/"evaluate") strategy
+    # handles a plain `is_demo == True` filter without a fallback SELECT.
+    total = 0
+    for model in _DEMO_TAGGED_MODELS:
+        total += session.query(model).filter_by(is_demo=True).delete()
+    if total:
+        logger.info(
+            "cleared %d demo row(s) across daily_metrics/bioage_scores/measurements/"
+            "profile because real data arrived",
+            total,
+        )
+    return total
 
 
 def _payload_hash(payload: dict[str, Any]) -> str:
@@ -169,6 +209,10 @@ class SyncService:
 
     def sync_all(self, today: date | None = None) -> list[SyncReport]:
         moment = today or date.today()
+        # Once per sync run, before any data type's first write, not once per data
+        # type: a demo history must not survive even the very first real sync, and
+        # nothing later in this loop should have to know or care that eviction happened.
+        evict_demo_data(self._session)
         reports = []
         for spec in DATA_TYPES:
             try:

@@ -19,6 +19,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -65,6 +66,9 @@ class DailyMetric(Base):
     __tablename__ = "daily_metrics"
 
     date: Mapped[date] = mapped_column(Date, primary_key=True)
+    is_demo: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=false(), default=False, index=True
+    )
     resting_hr_bpm: Mapped[float | None] = mapped_column(Float)
     hrv_rmssd_ms: Mapped[float | None] = mapped_column(Float)
     hrv_average_ms: Mapped[float | None] = mapped_column(Float)
@@ -94,6 +98,9 @@ class Profile(Base):
         Enum(Sex, name="sex", values_callable=lambda e: [m.value for m in e]), nullable=False
     )
     birthdate: Mapped[date] = mapped_column(Date, nullable=False)
+    is_demo: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=false(), default=False
+    )
 
 
 class Measurement(Base):
@@ -115,6 +122,9 @@ class Measurement(Base):
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
     value: Mapped[float] = mapped_column(Float, nullable=False)
     measured_on: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    is_demo: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=false(), default=False
+    )
 
 
 class BioAgeScore(Base):
@@ -128,6 +138,9 @@ class BioAgeScore(Base):
     components: Mapped[list] = mapped_column(JSONB, nullable=False)
     coverage: Mapped[dict] = mapped_column(JSONB, nullable=False)
     is_low_confidence: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_demo: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=false(), default=False, index=True
+    )
     computed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -39,8 +39,10 @@ a year of synthetic weekly points. Click around Profile and Connection too — e
 is fully functional except the "Connect Google Health" button, which needs step 3
 onward.
 
-When you're ready to leave the demo data behind, wipe it with `docker compose down -v`
-(this deletes the database volume) before you seed your real profile in step 10.
+You don't need to manually clear this before connecting real data — your first real sync
+(step 9) detects and removes every demo row automatically; see step 10. If you'd rather
+start from a completely empty database anyway, `docker compose down -v` (this deletes the
+database volume) does that.
 
 ## 3. Create a Google Cloud project
 
@@ -173,26 +175,26 @@ docker compose restart backend
 5. Click **Sync now**. This pulls your historical data (up to `BACKFILL_DAYS`, 90 days
    by default) from Google Health and computes weekly scores from whatever is there.
 
-## 10. Clear the demo data
+## 10. Demo data (informational — this is now automatic)
 
 Step 2 seeded 400 days of synthetic history so you could see the app working before
-touching Google Cloud. Those rows sit in the same table as your real ones and are
-indistinguishable from them, so after your first real sync your chart will show more
-than a year of history that never happened.
+touching Google Cloud. Older versions of this guide had you clear it by hand here, right
+after your first real sync, because those rows lived in the same table as your real ones
+with nothing distinguishing them — skip that step and your chart would silently show
+more than a year of history that never happened.
 
-Clear it once, after your first successful sync:
+**You no longer need to do anything.** Every row `seed-demo` writes — daily metrics,
+your profile, your measurements, the scores computed from them — is now tagged as demo
+data in the database, and your first real sync detects and deletes all of it
+automatically, before it writes anything of its own. You'll see one line in the backend
+logs when it happens (`cleared N demo row(s) ... because real data arrived`). This
+includes the demo profile: after that first real sync you may see the Profile page
+looking empty again (rather than showing the fake birthdate) until you fill in step 11 —
+that's the intended, visible first-run state, not a bug.
 
-```bash
-docker compose exec backend uv run python -m bioage.cli rebuild
-```
-
-This deletes every derived daily metric and weekly score, then rebuilds them purely from
-the raw API payloads your sync stored. Your credentials, profile and measurements are
-untouched, and it makes no network calls — re-deriving from the raw archive rather than
-re-fetching is exactly why raw payloads are stored before parsing.
-
-Run it again any time you want to be certain nothing synthetic is left, or after
-upgrading if a parser changed.
+`bioage rebuild` still exists and is still useful — just for a different situation now:
+re-deriving `daily_metrics` from the raw archive after a parser fix. See
+`docker compose exec backend uv run python -m bioage.cli rebuild --help`.
 
 ## 11. Enter your profile
 

@@ -16,12 +16,37 @@ from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
-from bioage.db.models import DailyMetric, Measurement, Profile
+from bioage.db.models import DailyMetric, Measurement, Profile, RawDataPoint
 from bioage.scoring import rescore_all
 from bioage.types import Sex
 
 DEMO_SEED = 20260802
 DEMO_BIRTHDATE = date(1990, 3, 14)
+
+
+class RealDataExistsError(RuntimeError):
+    """Raised by `seed_demo` when the database already holds real synced data.
+
+    Seeding demo rows on top of real ones is the mirror image of the bug this module's
+    `is_demo` column exists to prevent: a demo history would sit alongside real data,
+    get scored alongside it, and be indistinguishable from it once written. Refusing by
+    default (see `force`) makes that structurally hard to do by accident.
+    """
+
+
+def _has_real_data(session: Session) -> bool:
+    """True if the database holds any data a real sync -- not `seed_demo` -- wrote.
+
+    `raw_data_points` has no `is_demo` column at all: `seed_demo` never writes there
+    (it inserts straight into `daily_metrics`), so any row present is real by
+    construction. `daily_metrics` rows are checked by their `is_demo` flag directly,
+    since demo and real rows share that table.
+    """
+    has_raw = session.query(RawDataPoint.id).limit(1).first() is not None
+    has_real_daily = (
+        session.query(DailyMetric.date).filter_by(is_demo=False).limit(1).first() is not None
+    )
+    return has_raw or has_real_daily
 
 # Onboarding: a brand-new wearable's first fortnight of data is complete, mirroring the
 # MIN_WINDOW_DAYS bootstrap the scoring layer needs before it can say anything at all.
@@ -115,17 +140,36 @@ def generate_daily_metrics(
     return metrics
 
 
-def seed_demo(session: Session, days: int = 400, seed: int = DEMO_SEED) -> int:
-    """Populate a demo profile, metrics and scores. Returns the number of weeks scored."""
-    session.merge(Profile(id=1, sex=Sex.MALE, birthdate=DEMO_BIRTHDATE))
+def seed_demo(
+    session: Session, days: int = 400, seed: int = DEMO_SEED, force: bool = False
+) -> int:
+    """Populate a demo profile, metrics and scores. Returns the number of weeks scored.
+
+    Refuses to run against a database that already holds real synced data (see
+    `_has_real_data`) unless `force=True` -- seeding synthetic history on top of a real
+    one would be exactly the provenance bug this module's `is_demo` column exists to
+    prevent, just approached from the opposite direction.
+    """
+    if not force and _has_real_data(session):
+        raise RealDataExistsError(
+            "Refusing to seed demo data: this database already holds real synced data "
+            "(raw_data_points and/or non-demo daily_metrics rows exist). Seeding on top "
+            "of it would mix synthetic history into your real one. Pass force=True "
+            "(CLI: --force) if you really want to do this anyway."
+        )
+
+    session.merge(Profile(id=1, sex=Sex.MALE, birthdate=DEMO_BIRTHDATE, is_demo=True))
 
     start = date.today() - timedelta(days=days)
     for index, (kind, value) in enumerate(
         (("height_m", 1.78), ("weight_kg", 74.5), ("waist_cm", 87.0)), start=1
     ):
-        session.merge(Measurement(id=index, kind=kind, value=value, measured_on=start))
+        session.merge(
+            Measurement(id=index, kind=kind, value=value, measured_on=start, is_demo=True)
+        )
 
     for metric in generate_daily_metrics(start, days=days, seed=seed):
+        metric.is_demo = True
         session.merge(metric)
     session.flush()
 

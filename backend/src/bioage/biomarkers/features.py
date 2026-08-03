@@ -40,6 +40,7 @@ class DailyRecord:
     sleep_efficiency_pct: float | None = None
     sleep_midpoint_local_min: float | None = None
     respiratory_rate_brpm: float | None = None
+    is_demo: bool = False
 
 
 @dataclass(frozen=True)

@@ -7,7 +7,7 @@ import typer
 from bioage.config import get_settings
 from bioage.db.base import session_factory
 from bioage.db.models import BioAgeScore, DailyMetric
-from bioage.demo.generator import seed_demo
+from bioage.demo.generator import RealDataExistsError, seed_demo
 from bioage.ingest.sync import normalize_all
 from bioage.scoring import rescore_all
 
@@ -15,10 +15,27 @@ app = typer.Typer(help="Fitbit Air biological age tooling.")
 
 
 @app.command("seed-demo")
-def seed_demo_command(days: int = 400) -> None:
-    """Populate the database with synthetic history so the app runs without credentials."""
+def seed_demo_command(
+    days: int = 400,
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Seed demo data even though this database already holds real synced data.",
+    ),
+) -> None:
+    """Populate the database with synthetic history so the app runs without credentials.
+
+    Refuses if the database already holds real synced data (any `raw_data_points` rows,
+    or `daily_metrics` rows not already marked demo) -- seeding synthetic history on top
+    of a real one would recreate the exact provenance bug `is_demo` exists to prevent,
+    just in the opposite direction. Pass `--force` to seed anyway.
+    """
     with session_factory(get_settings().database_url)() as session:
-        weeks = seed_demo(session, days=days)
+        try:
+            weeks = seed_demo(session, days=days, force=force)
+        except RealDataExistsError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
         session.commit()
     typer.echo(f"Seeded {days} days of demo data and scored {weeks} weeks.")
 
@@ -31,16 +48,15 @@ def rebuild_command(
 
     Deletes every `daily_metrics` and `bioage_scores` row, then re-parses
     `raw_data_points` and rescores. Raw payloads, OAuth credentials, your profile and
-    your measurements are never touched, so this makes no network calls.
+    your measurements are never touched, so this makes no network calls. Every row this
+    rebuilds comes from `raw_data_points`, which `seed-demo` never writes to, so the
+    result is always real data (`is_demo=False`).
 
-    Two situations need this:
-
-    * You ran `seed-demo` and have since connected real data. Demo rows are written
-      straight into `daily_metrics` and are indistinguishable from parsed real ones, so
-      they linger and get scored alongside your history. This clears them.
-    * A parser was fixed. Re-deriving from the raw archive is exactly why raw payloads
-      are stored before parsing -- no re-fetch, and nothing that has aged out of the
-      API's 90-day window is lost.
+    Demo data left over from `seed-demo` no longer needs this: your first real sync now
+    clears it automatically, the moment real data arrives, tagged rows and all. What
+    this command remains the right tool for is re-deriving `daily_metrics` after a
+    parser fix -- exactly why raw payloads are stored before parsing in the first place,
+    no re-fetch, and nothing that has aged out of the API's 90-day window is lost.
     """
     if not yes:
         typer.confirm(

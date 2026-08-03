@@ -48,6 +48,7 @@ def load_daily_records(session: Session) -> list[DailyRecord]:
             sleep_efficiency_pct=row.sleep_efficiency_pct,
             sleep_midpoint_local_min=row.sleep_midpoint_local_min,
             respiratory_rate_brpm=row.respiratory_rate_brpm,
+            is_demo=row.is_demo,
         )
         for row in rows
     ]
@@ -96,6 +97,10 @@ def score_week(
     score.components = [asdict(c) for c in composite.components]
     score.coverage = coverage.as_dict()
     score.is_low_confidence = composite.is_low_confidence
+    # A week is demo-tainted if *any* day feeding its trailing window came from
+    # seed_demo, not just all of them: a week straddling the demo/real boundary is
+    # exactly the kind of row a real-sync eviction must not leave behind unmarked.
+    score.is_demo = any(record.is_demo for record in window)
     session.merge(score)
     return score
 
