@@ -76,3 +76,34 @@ def test_get_spec_raises_for_an_unknown_type():
 def test_the_registry_covers_every_biomarker_the_estimators_consume():
     ids = {s.data_type_id for s in DATA_TYPES}
     assert {"daily-resting-heart-rate", "daily-heart-rate-variability", "steps", "sleep"} <= ids
+
+
+BARE_DATE_SUFFIXES = ("date", "civil_start_time", "civil_end_time", "civil_time")
+
+
+@pytest.mark.parametrize("spec", DATA_TYPES, ids=lambda s: s.data_type_id)
+def test_filter_root_is_the_data_type_id_in_snake_case(spec):
+    """Google rejects a camelCase filter root with INVALID_DATA_POINT_FILTER_DATA_TYPE_RESTRICTION.
+
+    The data-types page says "the data type name must be in snake case"; the list-method
+    reference contradicts it with a camelCase example, which is what this project shipped
+    first. Types whose name is spelled identically either way (steps, sleep, weight,
+    height) hid the bug, so this asserts the rule for every entry rather than spot cases.
+    """
+    expected_root = spec.data_type_id.replace("-", "_")
+    assert spec.filter_field.split(".")[0] == expected_root
+
+
+@pytest.mark.parametrize("spec", DATA_TYPES, ids=lambda s: s.data_type_id)
+def test_filter_field_accepts_a_bare_date(spec):
+    """`start_time`/`end_time`/`physical_time` require a full RFC-3339 timestamp.
+
+    `build_filter` formats window bounds as bare "YYYY-MM-DD", so any field ending in one
+    of those suffixes returns INVALID_DATA_POINT_FILTER_TIMESTAMP_FORMAT. Only the
+    civil/date variants are safe with a date-only bound.
+    """
+    suffix = spec.filter_field.rsplit(".", 1)[-1]
+    assert suffix in BARE_DATE_SUFFIXES, (
+        f"{spec.data_type_id} filters on '{suffix}', which needs a full RFC-3339 "
+        f"timestamp; use the civil_* variant or teach build_filter to emit timestamps"
+    )

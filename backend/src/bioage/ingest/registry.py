@@ -68,26 +68,43 @@ class DataTypeSpec:
     expected_empty: bool = False
 
 
+# Two rules govern every `filter_field` below. Both were learned from live 400s, not
+# from the docs, because the docs contradict themselves on the first one.
+#
+# 1. The filter root must be the data type's name in **snake_case** — the data-types
+#    page states "the data type name must be in snake case", while the list-method
+#    reference's own example prints `dailyHeartRateVariability.date`. The camelCase form
+#    is rejected with INVALID_DATA_POINT_FILTER_DATA_TYPE_RESTRICTION. Types whose name
+#    is identical in both cases (steps, sleep, weight, height) masked this for a while.
+#
+# 2. The field suffix decides the value format. `date`, `civil_start_time`,
+#    `civil_end_time` and `civil_time` accept a bare "YYYY-MM-DD"; `start_time`,
+#    `end_time` and `physical_time` require a full RFC-3339 timestamp and reject a bare
+#    date with INVALID_DATA_POINT_FILTER_TIMESTAMP_FORMAT. Every entry here deliberately
+#    uses a bare-date field so `build_filter` needs no per-type value formatting, and so
+#    windows are expressed in the user's civil calendar rather than UTC instants — which
+#    is what a per-calendar-day biological-age model actually wants.
+#
+# `tests/ingest/test_registry.py` enforces both rules for every entry.
 DATA_TYPES: tuple[DataTypeSpec, ...] = (
     DataTypeSpec(
-        "daily-resting-heart-rate", "dailyRestingHeartRate.date",
+        "daily-resting-heart-rate", "daily_resting_heart_rate.date",
         DEFAULT_WINDOW_DAYS, METRICS_SCOPE, parse_daily_resting_heart_rate,
     ),
-    # Verbatim in the list-method docs: dailyHeartRateVariability.date < "2024-08-15".
     DataTypeSpec(
-        "daily-heart-rate-variability", "dailyHeartRateVariability.date",
+        "daily-heart-rate-variability", "daily_heart_rate_variability.date",
         DEFAULT_WINDOW_DAYS, METRICS_SCOPE, parse_daily_heart_rate_variability,
     ),
     DataTypeSpec(
-        "daily-respiratory-rate", "dailyRespiratoryRate.date",
+        "daily-respiratory-rate", "daily_respiratory_rate.date",
         DEFAULT_WINDOW_DAYS, METRICS_SCOPE, parse_daily_respiratory_rate,
     ),
     DataTypeSpec(
-        "daily-oxygen-saturation", "dailyOxygenSaturation.date",
+        "daily-oxygen-saturation", "daily_oxygen_saturation.date",
         DEFAULT_WINDOW_DAYS, METRICS_SCOPE, parse_daily_oxygen_saturation,
     ),
     DataTypeSpec(
-        "daily-sleep-temperature-derivations", "dailySleepTemperatureDerivations.date",
+        "daily-sleep-temperature-derivations", "daily_sleep_temperature_derivations.date",
         DEFAULT_WINDOW_DAYS, METRICS_SCOPE, parse_daily_sleep_temperature_derivations,
     ),
     # Verbatim in the list-method docs: steps.interval.civil_start_time >= "2023-11-24".
@@ -97,38 +114,27 @@ DATA_TYPES: tuple[DataTypeSpec, ...] = (
         "steps", "steps.interval.civil_start_time",
         DEFAULT_WINDOW_DAYS, ACTIVITY_SCOPE, parse_steps,
     ),
-    # ActiveZoneMinutes' proto field is interval-typed (ObservationTimeInterval), same as
-    # Steps; the interval.civil_start_time sub-path is documented as the generic pattern
-    # for all interval-typed data types, not just steps.
     DataTypeSpec(
-        "active-zone-minutes", "activeZoneMinutes.interval.civil_start_time",
+        "active-zone-minutes", "active_zone_minutes.interval.civil_start_time",
         DEFAULT_WINDOW_DAYS, ACTIVITY_SCOPE, parse_active_zone_minutes,
     ),
-    # CORRECTED from the task-19 brief's "sleep.session.end_time": the list-method docs
-    # give the verbatim example `sleep.interval.end_time >= "2023-11-24T00:00:00Z"`. The
-    # Sleep message's JSON field is named "session", but the filter DSL addresses it by
-    # its interval type, not its JSON field name -- "session" in a filter is a 400.
     DataTypeSpec(
-        "sleep", "sleep.interval.end_time",
+        "sleep", "sleep.interval.civil_end_time",
         DEFAULT_WINDOW_DAYS, SLEEP_SCOPE, parse_sleep, page_size=25,
     ),
-    # Verbatim in the list-method docs: weight.sample_time.physical_time >= "...".
     DataTypeSpec(
-        "weight", "weight.sample_time.physical_time",
+        "weight", "weight.sample_time.civil_time",
         DEFAULT_WINDOW_DAYS, METRICS_SCOPE, parse_weight,
     ),
-    # Height's proto field is sample-typed (sampleTime), same as Weight; the
-    # sample_time.physical_time sub-path is documented as the generic pattern for all
-    # sample-typed data types, not just weight.
     DataTypeSpec(
-        "height", "height.sample_time.physical_time",
+        "height", "height.sample_time.civil_time",
         DEFAULT_WINDOW_DAYS, METRICS_SCOPE, parse_height,
     ),
     # Polled so the coverage table can confirm what the Air does not produce. The Fitbit
     # Air does not populate VO2max (Google derives it only from GPS-tracked runs), so this
     # entry uses a no-op parser and is expected to come back empty.
     DataTypeSpec(
-        "daily-vo2-max", "dailyVo2Max.date",
+        "daily-vo2-max", "daily_vo2_max.date",
         DEFAULT_WINDOW_DAYS, ACTIVITY_SCOPE, _noop, expected_empty=True,
     ),
 )

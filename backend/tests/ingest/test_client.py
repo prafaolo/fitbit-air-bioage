@@ -17,7 +17,10 @@ def test_filter_expression_uses_the_specs_filter_field():
     spec = get_spec("daily-resting-heart-rate")
     window = DateRange(date(2026, 6, 1), date(2026, 6, 15))
     built = make_client().build_filter(spec, window)
-    assert "dailyRestingHeartRate.date" in built
+    # Derived from the spec, not hard-coded: a literal here duplicates the registry and
+    # silently goes stale when a filter field is corrected, which is how the camelCase
+    # roots survived until Google rejected them at runtime.
+    assert built.count(spec.filter_field) == 2
     assert '"2026-06-01"' in built
     assert '"2026-06-15"' in built
     assert " AND " in built

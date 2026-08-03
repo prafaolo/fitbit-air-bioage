@@ -75,22 +75,20 @@ This is the screen Google shows *you* when the app asks for permission to read y
 health data. Since this is a personal project and not a published product, Google
 requires you to explicitly allow your own account to use it.
 
-1. Go to **APIs & Services → OAuth consent screen**.
-2. Choose **External** as the user type (Internal is only available for Google Workspace
-   organizations, which a personal Gmail account is not), then **Create**.
-3. Fill in:
+1. Go to **APIs & Services → OAuth consent screen**. In the **Overview** tab, click **Get started** and start filling the app information.
+2. Fill in:
    - **App name**: anything, e.g. `Fitbit Air Bioage`.
    - **User support email**: your own email address.
+   - **Audience**: External (Internal is only available for Google Workspace organizations, which a personal Gmail account is not).
    - **Developer contact information**: your own email address again.
-4. Save and continue through the next screens without changing anything until you reach
-   **Test users**.
-5. Under **Test users**, click **Add users** and add **your own Google account's email
+3. Save and continue.
+4. In the **Audience** tab, under **Test users**, click **Add users** and add **your own Google account's email
    address** — the same one paired with your Fitbit Air.
 
    **This step matters.** Because the app is unpublished, Google will refuse to complete
    the sign-in for any account not on this list, and the callback will come back with
    `access_denied`. Adding yourself here is what lets your own account through.
-6. Save.
+5. Save.
 
    **One consequence of staying in Testing worth knowing now, not when it bites:**
    Google expires refresh tokens issued by a **Testing**-status OAuth client after
