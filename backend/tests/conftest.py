@@ -75,16 +75,29 @@ def db(engine) -> Iterator[Session]:
     outer_transaction = connection.begin()
 
     session = Session(bind=connection)
-    session.begin_nested()
+    nested = connection.begin_nested()
 
     @event.listens_for(session, "after_transaction_end")
     def _restart_savepoint(session: Session, transaction: object) -> None:
-        # `transaction.nested` is True for both the SAVEPOINT itself and for the
-        # session's own "sessionless" transaction wrapping it; only restart when the
-        # SAVEPOINT proper has ended (i.e. its parent is not itself nested).
-        if transaction.nested and not transaction._parent.nested:  # type: ignore[attr-defined]
+        # Checking the *connection's* own nested-transaction state (`nested.is_active`)
+        # rather than inspecting the ORM SessionTransaction object hierarchy (the
+        # previous version of this recipe checked `transaction.nested and not
+        # transaction._parent.nested`) is what makes this robust to application code
+        # calling `session.rollback()`, not just `session.commit()`. Both end the
+        # active SAVEPOINT, but SQLAlchemy's rollback() propagates differently through
+        # the ORM's own transaction-object hierarchy than commit() does; inferring the
+        # restart condition from that hierarchy worked for commit-only code paths but
+        # under a real rollback could leave the SAVEPOINT never reopened, letting a
+        # later commit from application code reach -- and "deassociate" -- the outer,
+        # externally-managed transaction this fixture rolls back at teardown. Reading
+        # the SAVEPOINT's own `is_active` flag from the connection instead sidesteps
+        # that hierarchy entirely and works identically after either commit or
+        # rollback. This is the current recipe from SQLAlchemy's own docs ("Joining a
+        # Session into an External Transaction (such as for test suites)").
+        nonlocal nested
+        if not nested.is_active:
             session.expire_all()
-            session.begin_nested()
+            nested = connection.begin_nested()
 
     try:
         yield session

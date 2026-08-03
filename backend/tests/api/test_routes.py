@@ -5,12 +5,15 @@ import httpx
 import pytest
 import respx
 from fastapi.testclient import TestClient
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from bioage.api.app import create_app
 from bioage.api.deps import get_session
 from bioage.api.routes_auth import oauth_state_store
 from bioage.api.routes_sync import get_sync_session_cm
-from bioage.db.models import OAuthCredential
+from bioage.config import Settings
+from bioage.db.models import OAuthCredential, SyncRun
 from bioage.demo.generator import seed_demo
 from bioage.ingest.client import BASE_URL as HEALTH_API_BASE_URL
 from bioage.ingest.registry import DATA_TYPES
@@ -268,6 +271,123 @@ def test_background_sync_failure_clears_running_and_is_recorded(client, db, monk
     status = client.get("/api/sync/status").json()["sync"]
     assert status["running"] is False
     assert status["last_error"] == "scoring exploded"
+
+
+def test_background_job_rolls_back_after_a_genuine_db_level_failure(engine, monkeypatch):
+    """A plain RuntimeError (the previous test) leaves the session perfectly usable --
+    it never touched the database. A *genuine* DB-level failure (a bad statement) is
+    different: Postgres aborts the underlying transaction, and every further statement
+    on that session without an explicit rollback() first raises PendingRollbackError on
+    top of the original error. Without routes_sync.py's `session.rollback()` as the
+    first statement of the except handler, the handler's own attempt to clear
+    `running` would itself raise, leaving it wedged at True forever.
+
+    Calls _run_sync_job directly (bypassing the HTTP layer and BackgroundTasks) so this
+    exercises exactly the function and code path in question, with a real DBAPI-level
+    error against the actual test database. Deliberately does NOT use the shared `db`
+    fixture: that fixture wraps every test in a SAVEPOINT so app-level commits stay
+    contained, but a genuine DBAPI-level abort followed by a real rollback/recommit
+    cycle interacts badly with that SAVEPOINT bookkeeping (the outer transaction can
+    become deassociated from the connection). A plain, unwrapped Session against the
+    same engine sidesteps that entirely -- this test cleans up its own row instead.
+    """
+    import bioage.api.routes_sync as routes_sync
+
+    class NoOpSyncService:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def sync_all(self):
+            return []
+
+    def poison(session):
+        # A real DBAPI-level failure, not a Python-level one: this aborts the
+        # underlying Postgres transaction.
+        session.execute(text("SELECT 1/0"))
+
+    monkeypatch.setattr(routes_sync, "SyncService", NoOpSyncService)
+    monkeypatch.setattr(routes_sync, "rescore_all", poison)
+
+    settings = Settings(database_url="unused-in-this-test")
+    session = Session(bind=engine)
+    try:
+        # With the rollback fix, this must complete without raising -- the whole point
+        # is that the except handler can still successfully clear `running` after a
+        # DB-level failure. Without the fix, this line itself raises
+        # PendingRollbackError.
+        routes_sync._run_sync_job(lambda: nullcontext(session), settings)
+
+        run = session.get(SyncRun, 1)
+        assert run is not None
+        assert run.running is False
+        assert run.last_error is not None
+    finally:
+        session.close()
+        with engine.begin() as conn:
+            conn.execute(text("DELETE FROM sync_run WHERE id = 1"))
+
+
+def test_sync_returns_409_when_a_sync_is_already_running(client, db):
+    """Nothing previously stopped two POSTs (or a POST racing the scheduled job) from
+    running two SyncService passes over the same tables concurrently -- the SyncRun
+    row makes the guard cheap."""
+    db.add(
+        OAuthCredential(
+            id=1,
+            refresh_token="rt",
+            access_token="still-valid",
+            token_expiry=datetime.now(UTC) + timedelta(hours=1),
+            scopes=[],
+        )
+    )
+    db.add(SyncRun(id=1, running=True, started_at=datetime.now(UTC)))
+    db.flush()
+
+    response = client.post("/api/sync")
+
+    assert response.status_code == 409
+    assert "already" in response.json()["detail"].lower()
+    # Nothing was scheduled: the running run's state is untouched, not overwritten by
+    # a second background job.
+    status = client.get("/api/sync/status").json()["sync"]
+    assert status["running"] is True
+    assert status["last_reports"] is None
+
+
+def test_reconcile_stale_sync_run_clears_a_running_flag_left_by_a_restart(db):
+    from bioage.api.routes_sync import reconcile_stale_sync_run
+
+    db.add(SyncRun(id=1, running=True, started_at=datetime.now(UTC)))
+    db.flush()
+
+    reconcile_stale_sync_run(db)
+
+    run = db.get(SyncRun, 1)
+    assert run is not None
+    assert run.running is False
+    assert run.finished_at is not None
+    # Not a fabricated success: the outcome is genuinely unknown, only recorded as
+    # reconciled.
+    assert run.last_error is not None
+    assert run.last_weeks_scored is None
+
+
+def test_reconcile_stale_sync_run_is_a_no_op_when_nothing_is_running(db):
+    from bioage.api.routes_sync import reconcile_stale_sync_run
+
+    # No SyncRun row at all yet -- must not create one or raise.
+    reconcile_stale_sync_run(db)
+    assert db.get(SyncRun, 1) is None
+
+    # A settled run must be left exactly as it was, not overwritten.
+    db.add(SyncRun(id=1, running=False, last_weeks_scored=5, last_error=None))
+    db.flush()
+    reconcile_stale_sync_run(db)
+    run = db.get(SyncRun, 1)
+    assert run is not None
+    assert run.running is False
+    assert run.last_weeks_scored == 5
+    assert run.last_error is None
 
 
 def test_auth_start_returns_503_without_google_credentials(client):

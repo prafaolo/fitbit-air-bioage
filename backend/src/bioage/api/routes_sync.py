@@ -98,6 +98,32 @@ def get_status(session: Session = Depends(get_session)) -> SyncStatusOut:
     )
 
 
+def reconcile_stale_sync_run(session: Session) -> None:
+    """Clear a `SyncRun` left `running = True` by a process that was killed or crashed
+    mid-sync (a container restart, an out-of-memory kill, ...).
+
+    Nothing else ever clears this: without it, a stale `running = True` wedges
+    Connection.tsx's "Sync now" button disabled indefinitely across every subsequent
+    restart, and the only way back is hand-editing the row. Called once at app startup
+    (see `create_app()`) -- if a sync were still genuinely in flight, this process
+    would be the one running it, and it demonstrably isn't yet, so any `running = True`
+    found here is stale by construction.
+    """
+    run = session.get(SyncRun, 1)
+    if run is None or not run.running:
+        return
+    run.running = False
+    run.finished_at = datetime.now(UTC)
+    # Do not fabricate a success (or even a genuinely observed failure): this row's
+    # actual outcome is unknown, only that the process that was running it is gone.
+    run.last_error = (
+        "Sync state was reconciled at startup after an interrupted run (e.g. a "
+        "restart mid-sync); its actual outcome is unknown."
+    )
+    session.merge(run)
+    session.commit()
+
+
 def get_sync_session_cm(
     settings: Settings = Depends(get_app_settings),
 ) -> Callable[[], AbstractContextManager[Session]]:
@@ -157,6 +183,14 @@ def _run_sync_job(
             # the frontend would poll "Syncing..." forever with no way to know the
             # background job died.
             logger.exception("background sync job failed")
+            # A genuine DB-level failure (a bad statement, a constraint violation not
+            # already caught inside SyncService) leaves the session's underlying
+            # transaction aborted at the database level -- every statement after that,
+            # without an explicit rollback() first, raises PendingRollbackError on top
+            # of the original error, so the ORM calls below to clear `running` would
+            # themselves fail and leave it wedged at True. rollback() must be the
+            # first statement here, before any ORM call, including session.get.
+            session.rollback()
             run = session.get(SyncRun, 1) or SyncRun(id=1)
             run.running = False
             run.finished_at = datetime.now(UTC)
@@ -174,5 +208,11 @@ def trigger_sync(
 ) -> dict[str, Any]:
     if session.get(OAuthCredential, 1) is None:
         raise HTTPException(status_code=409, detail="Not connected to Google Health")
+    existing_run = session.get(SyncRun, 1)
+    if existing_run is not None and existing_run.running:
+        # Nothing else stops two POSTs (or a POST racing the scheduled job) from
+        # running two SyncService passes over the same tables concurrently. The
+        # SyncRun row makes this guard cheap: check it before scheduling anything.
+        raise HTTPException(status_code=409, detail="A sync is already in progress")
     background_tasks.add_task(_run_sync_job, session_cm, settings)
     return {"status": "started"}
