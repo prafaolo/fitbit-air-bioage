@@ -1,0 +1,11 @@
+{
+  "dataPoints": [
+    {
+      "name": "users/me/dataTypes/daily-respiratory-rate/dataPoints/r1",
+      "dailyRespiratoryRate": {
+        "date": {"year": 2026, "month": 6, "day": 1},
+        "breathsPerMinute": 14.8
+      }
+    }
+  ]
+}

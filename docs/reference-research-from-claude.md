@@ -1,5 +1,15 @@
 # Fitbit Air → Biological Age: A Build Guide for a Solo Python Engineer
 
+> **This is the original research brief this project was built from — kept here
+> unmodified as a historical record, not corrected in place.** It contains at least
+> one documented error that was caught during implementation (the Klemera–Doubal
+> denominator formula printed below squares the wrong term; see the corrected
+> derivation and a regression test that pins the fix down). Treat everything below as
+> an *input to* this project's design, not as documentation *of* the shipped system —
+> for the authoritative, corrected account of what the code actually does, see
+> [`docs/METHODOLOGY.md`](METHODOLOGY.md), in particular §8, "Corrections to the source
+> research and the original plan."
+
 ## TL;DR
 - **Build on the new Google Health API, not the legacy Fitbit Web API.** The Fitbit Web API is being decommissioned in September 2026; the Google Health API — which Google's release notes (24 Mar 2026) describe as "the next generation of the Fitbit Web API, built from the ground up... focused on achieving parity with the Fitbit Web API across the most requested data types" — is its official successor and the only future-proof path. All the Air's core metrics (HRV, RHR, SpO2, respiratory rate, sleep stages, skin-temperature derivations, steps) are free base-tier data and readable via OAuth scopes without a Premium subscription.
 - **The Fitbit Air constrains your model:** it has PPG heart rate, 3-axis accel + gyro, red/IR SpO2, and a skin-temperature sensor — but **no ECG, no GPS, and therefore essentially no usable VO2max**. That kills any true measured-VO2max "Fitness Age" as a directly-measured input. Your reliable signal set is: RHR, nightly HRV (RMSSD), sleep architecture/regularity, daily steps, breathing rate, SpO2, and skin-temp variation.

@@ -1,0 +1,54 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: bioage
+      POSTGRES_PASSWORD: bioage
+      POSTGRES_DB: bioage
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bioage"]
+      interval: 5s
+      retries: 10
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  backend:
+    build: ./backend
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://bioage:bioage@db:5432/bioage
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./backend:/app
+      - /app/.venv
+
+  frontend:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    environment:
+      VITE_API_BASE: http://localhost:8000
+    volumes:
+      - ./frontend:/app
+      # Anonymous volume so the container's own (Linux) node_modules doesn't land in
+      # the host bind mount, mirroring the backend service's /app/.venv volume above --
+      # without it, `npm install` here writes Linux-native binaries (esbuild, rollup)
+      # into the host's frontend/node_modules, and a host-side `npm test`/`npm run
+      # build` (e.g. right after this quickstart, per the README) fails with a
+      # platform-mismatch error on macOS/Windows.
+      - /app/node_modules
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:

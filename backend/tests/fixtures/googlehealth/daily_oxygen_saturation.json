@@ -1,0 +1,14 @@
+{
+  "dataPoints": [
+    {
+      "name": "users/me/dataTypes/daily-oxygen-saturation/dataPoints/o1",
+      "dailyOxygenSaturation": {
+        "date": {"year": 2026, "month": 6, "day": 1},
+        "averagePercentage": 96.4,
+        "lowerBoundPercentage": 93.1,
+        "upperBoundPercentage": 99.0,
+        "standardDeviationPercentage": 1.2
+      }
+    }
+  ]
+}

@@ -1,0 +1,131 @@
+/*
+ * Tokens below are the dataviz skill's validated dark-mode chart chrome and
+ * categorical slot 1 (references/palette.md), reused for the whole app so
+ * the chrome and the chart read as one system:
+ *   --bg     -> dark chart surface   #1a1a19
+ *   --fg     -> primary ink          #ffffff
+ *   --muted  -> muted (axis/labels)  #898781
+ *   --accent -> categorical slot 1   #3987e5
+ *   --border -> gridline (hairline)  #2c2c2a
+ * This app has no light/dark toggle — it is a single-user, self-hosted
+ * dashboard rendered dark-only, so only the dark step of the palette is used.
+ */
+:root {
+  --bg: #1a1a19;
+  --fg: #ffffff;
+  --fg-secondary: #c3c2b7;
+  --muted: #898781;
+  --accent: #3987e5;
+  --border: #2c2c2a;
+  --baseline: #383835;
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.app { max-width: 1100px; margin: 0 auto; padding: 24px; }
+
+nav { display: flex; gap: 20px; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
+nav a { color: var(--muted); text-decoration: none; }
+nav a.active { color: var(--fg); font-weight: 600; }
+
+main { padding-top: 24px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+.headline { font-size: 17px; margin: 0 0 20px; }
+.muted { color: var(--muted); }
+.error { color: #e5776b; }
+
+.empty-state {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 56px 24px;
+  text-align: center;
+}
+
+.component-toggles { display: flex; gap: 16px; flex-wrap: wrap; margin: 16px 0; font-size: 13px; }
+.component-toggles label { display: flex; gap: 6px; align-items: center; }
+
+.methodology-note {
+  margin-top: 24px;
+  padding: 14px 16px;
+  border-left: 3px solid var(--accent);
+  background: rgba(57, 135, 229, 0.08);
+  border-radius: 0 8px 8px 0;
+  font-size: 13px;
+}
+
+/*
+ * BioAgeChart's legend and tooltip are custom-rendered (see
+ * colorForDataKey/renderLegend/renderTooltip in BioAgeChart.tsx) so that the
+ * swatch — never the text — carries a series' color. Recharts' default
+ * legend/tooltip color the label text by the mark's own fill, which is how
+ * the intentionally hollow low-confidence marker (fill = chart surface)
+ * produced invisible legend and tooltip text; keying color off a fixed
+ * dataKey→color map instead of the mark's fill sidesteps that entirely.
+ */
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  font-size: 13px;
+  color: var(--fg-secondary);
+}
+.chart-legend li { display: flex; align-items: center; gap: 6px; }
+
+/* The legend swatch is an inline <svg> (see renderLegend) so a component
+   line's dash pattern renders pixel-for-pixel the same as on the plot —
+   not a CSS approximation of it. The tooltip's line-key is simpler (a
+   plain colored stroke, per interaction.md) and stays a CSS bar. */
+.chart-legend-swatch { display: inline-block; flex: none; }
+.chart-legend-swatch--line { width: 12px; height: 2px; border-radius: 1px; }
+
+.chart-tooltip {
+  background: var(--bg);
+  border: 1px solid var(--baseline);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+.chart-tooltip-label { margin: 0 0 6px; color: var(--muted); }
+.chart-tooltip ul { list-style: none; margin: 0; padding: 0; }
+.chart-tooltip li { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.chart-tooltip li strong { color: var(--fg); font-weight: 600; }
+/* A component line's own 95% interval (age ± 1.96·sigma) — no estimate is
+   shown without its uncertainty, and components don't get a shaded band of
+   their own, so it rides along in the tooltip instead. */
+.chart-tooltip-interval { color: var(--muted); font-size: 12px; }
+.chart-tooltip-name { color: var(--fg-secondary); }
+
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+th { color: var(--muted); font-weight: 500; }
+
+.form-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 12px 0 20px; }
+
+.sync-report {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  font-size: 13px;
+  color: var(--fg-secondary);
+}
+.sync-report li { padding: 3px 0; }
+
+button {
+  background: var(--accent); color: #fff; border: 0; border-radius: 7px;
+  padding: 8px 16px; font-size: 14px; cursor: pointer;
+}
+button:disabled { opacity: 0.5; cursor: default; }
+
+input, select {
+  background: #1c1e26; color: var(--fg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 7px 9px; font-size: 14px;
+}

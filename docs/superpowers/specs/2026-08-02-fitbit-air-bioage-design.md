@@ -97,7 +97,7 @@ A `DATA_TYPES` registry is the single source of truth, one entry per data type h
 |---|---|
 | `data_type_id` | Path segment, e.g. `daily-resting-heart-rate` |
 | `filter_field` | Filter expression prefix, e.g. `dailyHeartRateVariability.date` |
-| `max_window_days` | Query range cap — **14 for `steps`, 90 for all others** |
+| `max_window_days` | Query range cap — **90 for every type this project uses** |
 | `scope` | Required OAuth scope |
 | `parser` | Pure function: raw JSON → typed daily record |
 | `page_size` | 1440 default; 25 for sleep |
@@ -110,7 +110,7 @@ Data types consumed:
   nightly RMSSD, the input the HRV-norm estimator wants) alongside
   `averageHeartRateVariabilityMilliseconds`, `nonRemHeartRateBeatsPerMinute`, and `entropy`.
   RMSSD is used as the primary HRV input, with the average as fallback.
-- `steps` — primary signal (14-day query cap)
+- `steps` — primary signal
 - `sleep` — architecture, efficiency, regularity
 - `daily-respiratory-rate` — secondary
 - `daily-oxygen-saturation` — trend only
@@ -131,7 +131,7 @@ implementation time; the registry design isolates that risk to a single constant
 - Cursor pagination via `nextPageToken`
 - Retry with exponential backoff on 429 and 5xx
 - **Window chunking**: a requested range longer than `max_window_days` is split into
-  sequential sub-requests. A 60-day `steps` backfill must issue five requests of ≤14 days.
+  sequential sub-requests. A 200-day backfill must issue three requests of ≤90 days.
 - AIP-160 filter expression construction
 
 OAuth uses the **web authorization-code flow** exposed as backend routes
@@ -383,7 +383,7 @@ Test weight is deliberately concentrated on pure logic.
 **Client** (`tests/ingest/`)
 - Mocked HTTP: pagination across `nextPageToken`, 429 backoff, token refresh on 401
 - Filter expression construction per data type
-- **Window chunking**: a 60-day `steps` backfill must produce five requests of ≤14 days
+- **Window chunking**: a 200-day backfill must produce three requests of ≤90 days
 
 **Features**
 - Rolling-window boundaries, missing days, median behavior with outliers

@@ -1,0 +1,74 @@
+[project]
+name = "bioage"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "sqlalchemy>=2.0",
+    "alembic>=1.14",
+    "psycopg[binary]>=3.2",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "httpx>=0.27",
+    "pyyaml>=6.0",
+    "typer>=0.15",
+    "google-auth>=2.35",
+    "google-auth-oauthlib>=1.2",
+    "apscheduler>=3.10",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "respx>=0.21",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "types-pyyaml>=6.0",
+    # Used only by bioage.reference.regenerate_kdm, an offline audit/regeneration
+    # script (run via `uv run python -m bioage.reference.regenerate_kdm`) and by its
+    # guard test (tests/estimators/test_kdm_regeneration.py) -- never imported by any
+    # runtime request path, so it belongs with the dev tooling, not the app's runtime
+    # dependencies.
+    "numpy>=2.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bioage"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+filterwarnings = [
+    # starlette.testclient (used by fastapi.testclient.TestClient) prefers an optional
+    # "httpx2" package as its internal request transport and falls back to `httpx` with
+    # this deprecation warning when it isn't installed. It's an upstream implementation
+    # detail of how TestClient drives requests through the ASGI app in-process; it has
+    # no bearing on this project's own HTTP usage (bioage.ingest.* and the OAuth routes
+    # use `httpx` throughout, unaffected by which transport TestClient picks). Scoped
+    # narrowly to this one message + category so any other StarletteDeprecationWarning
+    # still surfaces.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead\\.:starlette.exceptions.StarletteDeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's Depends(...)-as-default is the framework's documented dependency-injection
+# idiom, not the mutable-default-argument footgun B008 exists to catch.
+extend-immutable-calls = ["fastapi.Depends"]
+
+[[tool.mypy.overrides]]
+module = "bioage.estimators.*,bioage.biomarkers.*,bioage.reference.*"
+strict = true

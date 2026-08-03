@@ -1,0 +1,137 @@
+"""Loading and validation of bundled reference constants.
+
+Every constant used by an estimator lives in a YAML file beside this module and is
+loaded through here, so that no magic numbers appear in estimator code and every value
+is traceable to a citation.
+"""
+
+from __future__ import annotations
+
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
+
+import yaml
+from pydantic import BaseModel, Field
+
+from bioage.types import Sex
+
+REFERENCE_DIR = Path(__file__).parent
+
+
+class Cited(BaseModel):
+    """Base for any bundled constant set: a citation is mandatory."""
+
+    source: str = Field(min_length=1)
+    derived: bool = False
+
+
+def load_yaml(name: str) -> dict[str, Any]:
+    path = REFERENCE_DIR / f"{name}.yaml"
+    if not path.exists():
+        raise FileNotFoundError(f"No reference file named {name}.yaml in {REFERENCE_DIR}")
+    with path.open() as handle:
+        data = yaml.safe_load(handle)
+    if not isinstance(data, dict):
+        raise ValueError(f"{name}.yaml must contain a mapping at the top level")
+    return data
+
+
+class NtnuCoefficients(BaseModel):
+    intercept: float
+    age: float
+    physical_activity: float
+    waist: float
+    resting_hr: float
+
+
+class NtnuReferencePopulation(BaseModel):
+    physical_activity: float
+    waist_cm: float
+    resting_hr_bpm: float
+
+
+class NtnuConstants(Cited):
+    coefficients: dict[Sex, NtnuCoefficients]
+    reference_population: dict[Sex, NtnuReferencePopulation]
+
+
+@lru_cache
+def get_ntnu() -> NtnuConstants:
+    return NtnuConstants(**load_yaml("ntnu"))
+
+
+class PaIndexConstants(Cited):
+    steps_knots: list[tuple[float, float]]
+    azm_knots: list[tuple[float, float]]
+    index_ceiling: float
+    fallback_index: float
+    fitness_age_sigma_years: float
+
+
+@lru_cache
+def get_pa_index() -> PaIndexConstants:
+    return PaIndexConstants(**load_yaml("pa_index"))
+
+
+class HrvSexFit(BaseModel):
+    ln_intercept: float
+    ln_slope: float
+
+
+class HrvNormConstants(Cited):
+    male: HrvSexFit
+    female: HrvSexFit
+    sigma_years: float
+    min_rmssd_ms: float
+    max_rmssd_ms: float
+
+    def fit_for(self, sex: Sex) -> HrvSexFit:
+        return self.male if sex is Sex.MALE else self.female
+
+
+@lru_cache
+def get_hrv_norms() -> HrvNormConstants:
+    return HrvNormConstants(**load_yaml("hrv_norms"))
+
+
+class StepsMortalityConstants(Cited):
+    reference_steps: float
+    hazard_knots: list[tuple[float, float]]
+    mrdt_years: float
+    sigma_years: float
+
+
+@lru_cache
+def get_steps_mortality() -> StepsMortalityConstants:
+    return StepsMortalityConstants(**load_yaml("steps_mortality"))
+
+
+class KdmBiomarker(BaseModel):
+    q: float
+    k: float
+    s: float
+    source: str
+
+
+class KdmConstants(Cited):
+    min_biomarkers: int
+    s_ba: float
+    biomarkers: dict[str, KdmBiomarker]
+
+
+@lru_cache
+def get_kdm() -> KdmConstants:
+    return KdmConstants(**load_yaml("kdm_biomarkers"))
+
+
+class CompositeConstants(Cited):
+    z_score: float
+    sigma_multipliers: dict[str, float]
+    low_confidence_sigma_multiplier: float
+    min_components: int
+
+
+@lru_cache
+def get_composite() -> CompositeConstants:
+    return CompositeConstants(**load_yaml("composite"))

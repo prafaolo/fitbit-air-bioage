@@ -13,17 +13,18 @@
 ## Global Constraints
 
 - **Python 3.12+**, dependency management via **uv** only. Never invoke `pip` directly.
-- **All scientific logic in `estimators/` and `biomarkers/features.py` must be pure** — no database, network, filesystem, or clock access. They take dataclasses and return dataclasses. This is enforced by those modules importing nothing from `bioage.db`, `bioage.api`, or `bioage.ingest`.
+- **All scientific logic in `estimators/` and `biomarkers/features.py` must be pure** — no database, network, or clock access, and no mutable global state. They take dataclasses and return dataclasses. Reading bundled reference constants is permitted, but *only* through the cached `bioage.reference.loader` accessors (`get_ntnu()`, `get_kdm()`, …) — never by opening files directly. Enforced by those modules importing nothing from `bioage.db`, `bioage.api`, or `bioage.ingest`.
 - **Every numeric constant in `reference/*.yaml` carries a `source` citation string.** Derived constants additionally carry `derived: true`.
 - **Google Health API base URL is `https://health.googleapis.com/v4`.** Not `healthapi.googleapis.com`.
 - **Proto JSON encoding:** `Date` is `{"year": int, "month": int, "day": int}`; `Duration` is a string like `"28800s"`; `int64` fields arrive as **strings**. Parsers must coerce.
-- **Query window caps:** `steps` = 14 days, all other data types = 90 days.
+- **Query window caps:** 90 days for every data type this project uses. (Google caps `calories-in-heart-rate-zone`, `heart-rate`, `active-minutes` and `total-calories` at 14 days; none of those are in our registry. Verified against https://developers.google.com/health/data-types on 2026-08-02.)
 - **OAuth scopes** (exact strings):
   - `https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly`
   - `https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly`
   - `https://www.googleapis.com/auth/googlehealth.sleep.readonly`
 - **No estimate is ever returned or rendered without a confidence interval.**
-- Line length 100, formatted and linted with `ruff`. Type-checked with `mypy --strict` on `src/bioage/estimators/` and `src/bioage/biomarkers/`.
+- Line length 100, formatted and linted with `ruff`. Type-checked with `mypy --strict` on `src/bioage/estimators/`, `src/bioage/biomarkers/`, and `src/bioage/reference/`.
+- **`--strict` enables `disallow_any_generics`, so bare `dict`/`list` annotations fail.** Every generic must be parameterised: JSON payload arguments are `dict[str, Any]`, never `dict`. This applies to all parser signatures.
 - Commit after every task. Conventional Commit prefixes (`feat:`, `test:`, `chore:`, `docs:`, `fix:`).
 
 ## File Structure
@@ -300,9 +301,9 @@ class DateRange:
     def chunked(self, max_days: int) -> Iterator[DateRange]:
         """Split into contiguous sub-ranges of at most `max_days` each.
 
-        The Google Health API caps query ranges per data type (14 days for steps,
-        90 for the rest), so any backfill longer than the cap must be issued as
-        several sequential requests.
+        The Google Health API caps query ranges per data type (90 days for every
+        type this project uses), so any backfill longer than the cap must be issued
+        as several sequential requests.
         """
         if max_days < 1:
             raise ValueError("max_days must be at least 1")
@@ -5067,9 +5068,10 @@ ACTIVITY_SCOPE = "https://www.googleapis.com/auth/googlehealth.activity_and_fitn
 SLEEP_SCOPE = "https://www.googleapis.com/auth/googlehealth.sleep.readonly"
 
 
-def test_steps_is_capped_at_fourteen_days():
-    """The documented query range limit for steps is 14 days, unlike every other type."""
-    assert get_spec("steps").max_window_days == 14
+def test_steps_is_capped_at_ninety_days_like_the_others():
+    """Google caps only calories-in-heart-rate-zone, heart-rate, active-minutes and
+    total-calories at 14 days. `steps` is not among them, so it gets the 90-day cap."""
+    assert get_spec("steps").max_window_days == 90
 
 
 @pytest.mark.parametrize(
@@ -5164,7 +5166,9 @@ SLEEP_SCOPE = "https://www.googleapis.com/auth/googlehealth.sleep.readonly"
 SCOPES = (METRICS_SCOPE, ACTIVITY_SCOPE, SLEEP_SCOPE)
 
 DEFAULT_WINDOW_DAYS = 90
-STEPS_WINDOW_DAYS = 14  # documented cap, unique to steps
+# Every data type this project reads uses the 90-day cap. Google's 14-day cap applies
+# only to calories-in-heart-rate-zone, heart-rate, active-minutes and total-calories,
+# none of which are registered here. Verified against the live docs on 2026-08-02.
 
 
 def _noop(_: dict) -> ParsedPoint | None:
@@ -5205,7 +5209,7 @@ DATA_TYPES: tuple[DataTypeSpec, ...] = (
     ),
     DataTypeSpec(
         "steps", "steps.interval.civil_start_time",
-        STEPS_WINDOW_DAYS, ACTIVITY_SCOPE, parse_steps,
+        DEFAULT_WINDOW_DAYS, ACTIVITY_SCOPE, parse_steps,
     ),
     DataTypeSpec(
         "active-zone-minutes", "activeZoneMinutes.interval.civil_start_time",
@@ -5328,15 +5332,15 @@ def test_follows_pagination_until_the_token_is_exhausted():
 
 
 @respx.mock
-def test_sixty_day_steps_backfill_is_split_into_five_requests():
-    """The steps query cap is 14 days, so a 60-day range needs five sequential calls."""
+def test_two_hundred_day_backfill_is_split_into_three_requests():
+    """The query cap is 90 days, so a 200-day range needs three sequential calls."""
     route = respx.get(url__startswith=BASE_URL).mock(
         return_value=httpx.Response(200, json={"dataPoints": []})
     )
     make_client().list_data_points(
-        get_spec("steps"), DateRange(date(2026, 1, 1), date(2026, 3, 2))
+        get_spec("steps"), DateRange(date(2026, 1, 1), date(2026, 7, 20))
     )
-    assert route.call_count == 5
+    assert route.call_count == 3
 
 
 @respx.mock

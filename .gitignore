@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+node_modules/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+client_secret.json
+*.tsbuildinfo

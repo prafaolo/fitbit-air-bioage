@@ -1,0 +1,36 @@
+source: DERIVED by bioage.reference.regenerate_kdm from the published age-stratified normative
+  tables embedded in that script. No primary NHANES q/k/s table exists for wearable-derived
+  biomarkers, so these are reconstructed, not primary. See docs/METHODOLOGY.md.
+derived: true
+min_biomarkers: 3
+s_ba: 11.0
+biomarkers:
+  resting_hr_bpm:
+    q: 63.261905
+    k: 0.111429
+    s: 9.924169
+    source: Resting heart rate rises modestly with age in adults; strata approximate NHANES
+      adult resting pulse distributions (Ostchega et al., NCHS Data Brief).
+  hrv_rmssd_ms:
+    q: 73.285714
+    k: -0.645714
+    s: 16.172728
+    source: Nightly RMSSD normative medians from docs/reference-research-from-claude.md, consistent
+      with a 1-3%/year decline after the mid-20s.
+  mean_daily_steps:
+    q: 12138.095238
+    k: -91.428571
+    s: 3366.619519
+    source: Age-stratified mean daily step counts decline steadily through adulthood (Althoff
+      et al., Nature 2017; NHANES accelerometry summaries).
+  sleep_efficiency_pct:
+    q: 97.452381
+    k: -0.205714
+    s: 6.120678
+    source: Sleep efficiency declines with age in meta-analysed polysomnography norms (Ohayon
+      et al., Sleep 2004).
+  bmi:
+    q: 26.621429
+    k: 0.038571
+    s: 6.160241
+    source: Adult BMI rises through midlife then plateaus (NHANES anthropometry).

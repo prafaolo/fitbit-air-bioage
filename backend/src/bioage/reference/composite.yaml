@@ -1,0 +1,21 @@
+source: >-
+  Weighting follows the reliability guidance in docs/reference-research-from-claude.md: resting
+  heart rate, HRV trend and step volume carry the most signal; wrist-PPG HRV is noisier
+  than ECG and is downweighted accordingly. SpO2 and skin temperature are deliberately
+  excluded as age components and surface only as trend context.
+derived: true
+
+z_score: 1.96
+
+# Multiplies each component's own sigma before inverse-variance weighting. Values above
+# 1.0 downweight a component.
+sigma_multipliers:
+  ntnu_fitness: 1.0
+  kdm: 1.0
+  steps_mortality: 1.1
+  hrv_norm: 1.3
+
+# Applied to the combined sigma when the week's data coverage is thin.
+low_confidence_sigma_multiplier: 1.6
+
+min_components: 2

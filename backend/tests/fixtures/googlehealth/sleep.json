@@ -1,0 +1,32 @@
+{
+  "dataPoints": [
+    {
+      "name": "users/me/dataTypes/sleep/dataPoints/n1",
+      "sleep": {
+        "session": {
+          "startTime": "2026-05-31T23:00:00Z",
+          "endTime": "2026-06-01T07:00:00Z"
+        },
+        "sleepMetadata": {"stagesState": "STAGES_AVAILABLE"},
+        "sleepSummary": {
+          "totalDuration": "28800s",
+          "stageSummary": [
+            {"stage": "AWAKE", "duration": "2400s"},
+            {"stage": "LIGHT", "duration": "14400s"},
+            {"stage": "DEEP", "duration": "5400s"},
+            {"stage": "REM", "duration": "6600s"}
+          ]
+        },
+        "sleepStages": [
+          {"startTime": "2026-05-31T23:00:00Z", "endTime": "2026-05-31T23:10:00Z", "stage": "AWAKE"},
+          {"startTime": "2026-05-31T23:10:00Z", "endTime": "2026-06-01T01:10:00Z", "stage": "LIGHT"},
+          {"startTime": "2026-06-01T01:10:00Z", "endTime": "2026-06-01T02:40:00Z", "stage": "DEEP"},
+          {"startTime": "2026-06-01T02:40:00Z", "endTime": "2026-06-01T03:00:00Z", "stage": "AWAKE"},
+          {"startTime": "2026-06-01T03:00:00Z", "endTime": "2026-06-01T05:00:00Z", "stage": "LIGHT"},
+          {"startTime": "2026-06-01T05:00:00Z", "endTime": "2026-06-01T06:50:00Z", "stage": "REM"},
+          {"startTime": "2026-06-01T06:50:00Z", "endTime": "2026-06-01T07:00:00Z", "stage": "AWAKE"}
+        ]
+      }
+    }
+  ]
+}

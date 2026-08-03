@@ -1,0 +1,15 @@
+{
+  "dataPoints": [
+    {
+      "name": "users/me/dataTypes/sleep/dataPoints/n2",
+      "sleep": {
+        "session": {
+          "startTime": "2026-06-01T23:30:00Z",
+          "endTime": "2026-06-02T06:30:00Z"
+        },
+        "sleepMetadata": {"stagesState": "STAGES_UNAVAILABLE"},
+        "sleepSummary": {"totalDuration": "25200s"}
+      }
+    }
+  ]
+}
