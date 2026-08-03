@@ -103,28 +103,78 @@ def test_active_zone_minutes_coerces_the_string_count() -> None:
     assert parsed.values["active_zone_minutes"] == pytest.approx(27.0)
 
 
-def test_weight_and_height_use_sample_time() -> None:
-    weight = parse_weight(
-        {"weight": {"sampleTime": {"time": "2026-06-01T07:30:00Z"}, "kilograms": 74.3}}
-    )
-    assert weight is not None
-    assert weight.day == date(2026, 6, 1)
-    assert weight.values["weight_kg"] == pytest.approx(74.3)
-
-    height = parse_height(
-        {"height": {"sampleTime": {"time": "2026-06-01T07:30:00Z"}, "meters": 1.78}}
-    )
-    assert height is not None
-    assert height.values["height_m"] == pytest.approx(1.78)
+def test_weight_uses_civil_time_date_and_weight_grams_from_a_real_payload() -> None:
+    """Real captured payload: sampleTime has no top-level `time` field -- the day comes
+    from sampleTime.civilTime.date (already local), and the value is weightGrams, not
+    the RPC-documented `kilograms`."""
+    point = load("weight")["dataPoints"][0]
+    parsed = parse_weight(point)
+    assert parsed is not None
+    assert parsed.day == date(2026, 7, 8)
+    assert parsed.values["weight_kg"] == pytest.approx(88.0)
 
 
-def test_weight_accepts_the_alternative_grams_encoding() -> None:
-    """The dataPoints overview documents weightGrams while the RPC reference documents
-    kilograms. Accept either rather than silently dropping the field."""
+def test_weight_second_real_payload() -> None:
+    point = load("weight")["dataPoints"][1]
+    parsed = parse_weight(point)
+    assert parsed is not None
+    assert parsed.day == date(2026, 6, 16)
+    assert parsed.values["weight_kg"] == pytest.approx(87.0)
+
+
+def test_height_uses_civil_time_date_and_height_millimeters_from_a_real_payload() -> None:
+    """Real captured payload: heightMillimeters is a string ("1900"), not the
+    RPC-documented `meters`."""
+    point = load("height")["dataPoints"][0]
+    parsed = parse_height(point)
+    assert parsed is not None
+    assert parsed.day == date(2026, 6, 16)
+    assert parsed.values["height_m"] == pytest.approx(1.9)
+
+
+def test_weight_accepts_the_kilograms_encoding_as_a_fallback() -> None:
+    """The RPC reference documents `kilograms`; the live API sends `weightGrams`, but
+    `kilograms` is kept as a fallback in case a future API version sends it."""
     parsed = parse_weight(
-        {"weight": {"sampleTime": {"time": "2026-06-01T07:30:00Z"}, "weightGrams": 74300}}
+        {
+            "weight": {
+                "sampleTime": {"civilTime": {"date": {"year": 2026, "month": 6, "day": 1}}},
+                "kilograms": 74.3,
+            }
+        }
     )
     assert parsed is not None
+    assert parsed.day == date(2026, 6, 1)
+    assert parsed.values["weight_kg"] == pytest.approx(74.3)
+
+
+def test_height_accepts_the_meters_encoding_as_a_fallback() -> None:
+    """The RPC reference documents `meters`; the live API sends `heightMillimeters`,
+    but `meters` is kept as a fallback in case a future API version sends it."""
+    parsed = parse_height(
+        {
+            "height": {
+                "sampleTime": {"civilTime": {"date": {"year": 2026, "month": 6, "day": 1}}},
+                "meters": 1.78,
+            }
+        }
+    )
+    assert parsed is not None
+    assert parsed.day == date(2026, 6, 1)
+    assert parsed.values["height_m"] == pytest.approx(1.78)
+
+
+def test_sample_day_falls_back_to_physical_time_when_civil_time_is_absent() -> None:
+    parsed = parse_weight(
+        {
+            "weight": {
+                "sampleTime": {"physicalTime": "2026-06-01T07:30:00Z"},
+                "weightGrams": 74300,
+            }
+        }
+    )
+    assert parsed is not None
+    assert parsed.day == date(2026, 6, 1)
     assert parsed.values["weight_kg"] == pytest.approx(74.3)
 
 
@@ -137,6 +187,7 @@ def test_weight_accepts_the_alternative_grams_encoding() -> None:
         parse_daily_oxygen_saturation,
         parse_steps,
         parse_weight,
+        parse_height,
     ],
 )
 def test_every_parser_returns_none_for_an_unrelated_payload(

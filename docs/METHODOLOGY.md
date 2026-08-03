@@ -574,39 +574,42 @@ This is a real limitation of the sensing modality, not a defect in this project'
 inversion of the RMSSD/age relationship — it is why the HRV-norm estimator carries a
 wide σ = 7.0 years (§4.2) and the largest composite downweighting multiplier (1.3×, §5).
 
-### 6.5 Sleep efficiency and WASO are derived, not reported by the API
+### 6.5 Sleep efficiency and WASO come from the API's own summary fields
 
-The Google Health Sleep message does not carry sleep efficiency or wake-after-sleep-onset
-(WASO) as fields. Both are computed in `backend/src/bioage/biomarkers/parsers/sleep.py`
-from the raw session interval and stage timeline:
+An earlier version of this parser was built against Google's RPC reference docs, which
+describe a `session`/`sleepSummary`/`sleepStages` shape and no efficiency or WASO
+fields — both had to be derived by hand from the stage timeline. The live API's real
+payload (`backend/src/bioage/biomarkers/parsers/sleep.py`) is nested under
+`interval`/`summary`/`stages` instead, and its `summary` already reports the inputs
+needed directly, so no hand-derivation is needed:
 
 ```
-time_in_bed = session.endTime − session.startTime
-asleep      = duration(LIGHT) + duration(DEEP) + duration(REM)
-efficiency  = asleep / time_in_bed × 100
-WASO        = sum of AWAKE-stage durations strictly between
-              the first and last non-awake stage
+sleep_total_min      = summary.minutesAsleep
+sleep_efficiency_pct = minutesAsleep / minutesInSleepPeriod × 100, clamped to [0, 100]
+waso_min             = summary.minutesAwake
+deep_pct / rem_pct   = that stage's summary.stagesSummary[].minutes,
+                        as a percentage of minutesAsleep
 ```
 
-**WASO deliberately excludes leading and trailing wakefulness.** Time spent awake before
-falling asleep or after waking but before getting up is time in bed awake, not
-wakefulness *after sleep onset* by definition — including it would conflate "took a
-while to fall asleep" with "woke up in the middle of the night," which have different
-clinical meanings. `deep_pct` and `rem_pct`, when reported, are fractions of time
-*asleep* (not time in bed), consistent with how sleep-stage percentages are normally
-reported.
+**`minutesAwake` is WASO with nothing to strip out.** The payload separates onset
+latency (`minutesToFallAsleep`) and post-wake time (`minutesAfterWakeUp`) from time
+asleep, so `minutesAwake` is already wakefulness *within* the sleep period — WASO by
+definition — unlike leading/trailing wakefulness, which the API keeps out of it already.
+`deep_pct` and `rem_pct`, when reported, are fractions of time *asleep* (not time in
+bed), consistent with how sleep-stage percentages are normally reported. When
+`metadata.stagesStatus` is not `"SUCCEEDED"`, `deep_pct`/`rem_pct` are omitted; the other
+values come from `summary` fields that do not depend on per-epoch stage classification
+having succeeded.
 
-**Sleep midpoints carry a related, separate limitation worth flagging here.** Sleep
-regularity (`backend/src/bioage/biomarkers/regularity.py`) is computed as the circular
-standard deviation of nightly sleep midpoints, read from each session's own timestamp
-offset with **no explicit conversion to a fixed local timezone**. Circular SD is
-rotation-invariant, so a *constant* UTC offset — living in one timezone the whole
-window — cannot bias the regularity statistic; only a *change* in offset within a 30-day
-window matters. A daylight-saving-time transition falling inside a 30-day window injects
-a spurious ~60-minute shift into that window's sleep-midpoint calculation, twice a year,
-for users whose Fitbit reports timestamps in a DST-observing local offset. This is a
-known limitation, not a computed bug: no explicit fix is applied, and the effect is
-small and self-correcting (the affected window ages out after 30 days).
+**Sleep midpoints are now converted to genuine local time, resolving a previously
+documented DST limitation.** Sleep regularity (`backend/src/bioage/biomarkers/regularity.py`)
+is computed as the circular standard deviation of nightly sleep midpoints. The old
+parser had no local offset to work with and read each timestamp's own (UTC) offset, so a
+daylight-saving-time transition falling inside a 30-day window injected a spurious
+~60-minute shift into that window's sleep-midpoint calculation, twice a year, for users
+whose Fitbit reports timestamps in a DST-observing local offset. The real payload carries
+`interval.startUtcOffset`, the session's true local UTC offset, which the parser now uses
+to convert the midpoint to actual local time. That limitation no longer applies.
 
 ## 7. Reproducing the constants
 

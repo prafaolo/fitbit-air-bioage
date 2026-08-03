@@ -68,28 +68,27 @@ class ScriptedApi:
     def _sleep(self, day: date) -> dict:
         previous = day - timedelta(days=1)
         return {"sleep": {
-            "session": {
+            "type": "STAGES",
+            "interval": {
                 "startTime": f"{previous.isoformat()}T23:00:00Z",
                 "endTime": f"{day.isoformat()}T07:00:00Z",
+                "startUtcOffset": "0s",
+                "endUtcOffset": "0s",
             },
-            "sleepMetadata": {"stagesState": "STAGES_AVAILABLE"},
-            "sleepSummary": {
-                "totalDuration": "28800s",
-                "stageSummary": [
-                    {"stage": "AWAKE", "duration": "2400s"},
-                    {"stage": "LIGHT", "duration": "14400s"},
-                    {"stage": "DEEP", "duration": "5400s"},
-                    {"stage": "REM", "duration": "6600s"},
+            "metadata": {"mainSleep": True, "processed": True, "stagesStatus": "SUCCEEDED"},
+            "summary": {
+                "minutesAsleep": "440",
+                "minutesAwake": "20",
+                "minutesInSleepPeriod": "480",
+                "minutesToFallAsleep": "0",
+                "minutesAfterWakeUp": "0",
+                "stagesSummary": [
+                    {"type": "AWAKE", "count": "1", "minutes": "20"},
+                    {"type": "LIGHT", "count": "1", "minutes": "240"},
+                    {"type": "DEEP", "count": "1", "minutes": "90"},
+                    {"type": "REM", "count": "1", "minutes": "110"},
                 ],
             },
-            "sleepStages": [
-                {"startTime": f"{previous.isoformat()}T23:10:00Z",
-                 "endTime": f"{day.isoformat()}T01:10:00Z", "stage": "LIGHT"},
-                {"startTime": f"{day.isoformat()}T01:10:00Z",
-                 "endTime": f"{day.isoformat()}T01:30:00Z", "stage": "AWAKE"},
-                {"startTime": f"{day.isoformat()}T01:30:00Z",
-                 "endTime": f"{day.isoformat()}T07:00:00Z", "stage": "REM"},
-            ],
         }}
 
 
@@ -137,7 +136,7 @@ def test_sleep_derivations_survive_the_whole_pipeline(profiled):
         DailyMetric.sleep_efficiency_pct.isnot(None)
     ).first()
     assert metric is not None
-    # LIGHT+DEEP+REM = 26400s of 480 minutes in bed
+    # minutesAsleep=440 of minutesInSleepPeriod=480
     assert metric.sleep_efficiency_pct == pytest.approx(440 / 480 * 100, abs=0.1)
     assert metric.waso_min == pytest.approx(20.0, abs=0.1)
 

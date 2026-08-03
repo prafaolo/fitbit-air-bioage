@@ -1,27 +1,58 @@
-"""Sleep parsing, including the metrics the API does not provide directly.
+"""Sleep parsing.
 
-The Sleep message carries a session interval, a total duration, per-stage durations and
-a stage timeline. Sleep efficiency and WASO are *not* fields; both are derived here:
+Earlier versions of this parser were built against Google's RPC reference docs, which
+describe a `session`/`sleepSummary`/`sleepStages` shape that the live API does not
+actually send. The real payload nests everything under `interval`/`summary`/`stages`
+and, unlike the documented shape, already reports sleep efficiency's inputs and WASO
+directly -- there is no need to re-derive them from the stage timeline by hand:
 
-    time_in_bed = session.end - session.start
-    asleep      = LIGHT + DEEP + REM
-    efficiency  = asleep / time_in_bed * 100
-    WASO        = AWAKE stages strictly between the first and last non-awake stage
+    sleep_total_min      = summary.minutesAsleep
+    sleep_efficiency_pct = minutesAsleep / minutesInSleepPeriod * 100, clamped to [0, 100]
+    waso_min             = summary.minutesAwake
+    deep_pct / rem_pct   = that stage's summary.stagesSummary[].minutes, as a percentage
+                           of minutesAsleep
 
-Leading and trailing wakefulness is time in bed awake, not wakefulness *after sleep
-onset*, so it is excluded from WASO by definition.
+`minutesAwake` is safe to use directly as WASO: the payload separates onset latency
+(`minutesToFallAsleep`) and post-wake time (`minutesAfterWakeUp`) from time asleep, so
+`minutesAwake` is already wakefulness *within* the sleep period -- which is what WASO
+means -- with no leading/trailing-wakefulness contamination to strip out by hand.
 
-A night is attributed to its wake date, the conventional attribution for sleep.
+`interval.startUtcOffset` carries the session's real local UTC offset, so the midpoint
+is converted to genuine local time here. This resolves the DST limitation documented in
+`docs/METHODOLOGY.md` §6.5: the old parser had no local offset to work with and read
+each timestamp's own (UTC) offset, so a DST transition inside a rolling window injected
+a spurious ~60-minute shift into the regularity statistic. That limitation no longer
+applies now that a genuine local offset is available per session.
+
+A night is attributed to the local wake date (local `interval.endTime`). Only
+`metadata.mainSleep == true` records are accepted -- naps are dropped rather than
+overwriting the main night's row for that date. When `metadata.stagesStatus` is not
+`"SUCCEEDED"`, the stage-derived keys (`deep_pct`, `rem_pct`) are omitted; duration,
+efficiency, WASO and midpoint all come from `summary` fields that do not depend on
+per-epoch stage classification having succeeded.
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Any
 
-from bioage.biomarkers.parsers.common import parse_duration_seconds, parse_timestamp
+from bioage.biomarkers.parsers.common import parse_double, parse_timestamp
 from bioage.biomarkers.parsers.daily import ParsedPoint
 
-ASLEEP_STAGES = ("LIGHT", "DEEP", "REM")
+
+def _offset_seconds(raw: object) -> float:
+    """Parse a `"7200s"`-style Duration string; 0.0 (UTC) for anything else."""
+    if isinstance(raw, str) and raw.endswith("s"):
+        try:
+            return float(raw[:-1])
+        except ValueError:
+            return 0.0
+    return 0.0
+
+
+def _minutes_past_midnight(moment: datetime) -> float:
+    return moment.hour * 60.0 + moment.minute + moment.second / 60.0
 
 
 def parse_sleep(payload: dict[str, Any]) -> ParsedPoint | None:
@@ -29,85 +60,70 @@ def parse_sleep(payload: dict[str, Any]) -> ParsedPoint | None:
     if not isinstance(body, dict):
         return None
 
-    session = body.get("session")
-    if not isinstance(session, dict) or "startTime" not in session or "endTime" not in session:
+    metadata = body.get("metadata")
+    if not isinstance(metadata, dict) or metadata.get("mainSleep") is not True:
         return None
 
-    start = parse_timestamp(session["startTime"])
-    end = parse_timestamp(session["endTime"])
-    time_in_bed_min = (end - start).total_seconds() / 60.0
-    if time_in_bed_min <= 0:
+    interval = body.get("interval")
+    if not isinstance(interval, dict) or "startTime" not in interval or "endTime" not in interval:
         return None
 
-    summary = body.get("sleepSummary")
+    start = parse_timestamp(interval["startTime"])
+    end = parse_timestamp(interval["endTime"])
+    if (end - start).total_seconds() <= 0:
+        return None
+
+    summary = body.get("summary")
     if not isinstance(summary, dict):
-        summary = {}
-    total_raw = summary.get("totalDuration")
-    total_min = parse_duration_seconds(total_raw) / 60.0 if total_raw else time_in_bed_min
+        return None
 
-    midpoint = start + (end - start) / 2
+    minutes_asleep = parse_double(summary.get("minutesAsleep"))
+    if minutes_asleep is None:
+        return None
+
+    start_offset = _offset_seconds(interval.get("startUtcOffset"))
+    end_offset = _offset_seconds(interval.get("endUtcOffset", interval.get("startUtcOffset")))
+
+    local_end = end + timedelta(seconds=end_offset)
+    utc_midpoint = start + (end - start) / 2
+    local_midpoint = utc_midpoint + timedelta(seconds=start_offset)
+
     values: dict[str, float] = {
-        "sleep_total_min": total_min,
-        "sleep_midpoint_local_min": midpoint.hour * 60.0 + midpoint.minute + midpoint.second / 60.0,
+        "sleep_total_min": minutes_asleep,
+        "sleep_midpoint_local_min": _minutes_past_midnight(local_midpoint),
     }
 
-    metadata = body.get("sleepMetadata")
-    stages_available = (
-        isinstance(metadata, dict) and metadata.get("stagesState") == "STAGES_AVAILABLE"
-    )
-    stage_summary = summary.get("stageSummary")
-    if stages_available and isinstance(stage_summary, list):
-        durations: dict[str, float] = {}
-        for entry in stage_summary:
-            if not isinstance(entry, dict):
-                continue
-            stage = entry.get("stage")
-            duration = entry.get("duration")
-            if stage and duration:
-                durations[stage] = durations.get(stage, 0.0) + parse_duration_seconds(duration)
-
-        asleep_seconds = sum(durations.get(stage, 0.0) for stage in ASLEEP_STAGES)
-        # Clamped to [0, 100]: stage durations are reported independently of the
-        # session interval, so a device that reports slightly more asleep-stage time
-        # than the session spans (clock drift between the two, or a stage that
-        # overruns the session boundary) would otherwise produce >100% efficiency --
-        # arithmetically valid here, but meaningless, and it flows straight into KDM
-        # as a biomarker (bioage.estimators.kdm), where an implausible value skews the
-        # estimate rather than just looking wrong in a UI.
-        efficiency = asleep_seconds / 60.0 / time_in_bed_min * 100.0
+    minutes_in_period = parse_double(summary.get("minutesInSleepPeriod"))
+    if minutes_in_period is not None and minutes_in_period > 0:
+        # Clamped to [0, 100]: this flows straight into KDM as a biomarker
+        # (bioage.estimators.kdm), where a value outside the physically valid range
+        # would skew the estimate rather than just looking wrong in a UI.
+        efficiency = minutes_asleep / minutes_in_period * 100.0
         values["sleep_efficiency_pct"] = min(max(efficiency, 0.0), 100.0)
 
-        if asleep_seconds > 0:
-            values["deep_pct"] = durations.get("DEEP", 0.0) / asleep_seconds * 100.0
-            values["rem_pct"] = durations.get("REM", 0.0) / asleep_seconds * 100.0
-            waso = _waso_minutes(body.get("sleepStages"))
-            if waso is not None:
-                values["waso_min"] = waso
+    minutes_awake = parse_double(summary.get("minutesAwake"))
+    if minutes_awake is not None:
+        values["waso_min"] = minutes_awake
 
-    return ParsedPoint(end.date(), values)
+    if metadata.get("stagesStatus") == "SUCCEEDED" and minutes_asleep > 0:
+        stage_minutes = _stage_minutes(summary.get("stagesSummary"))
+        if "DEEP" in stage_minutes:
+            values["deep_pct"] = stage_minutes["DEEP"] / minutes_asleep * 100.0
+        if "REM" in stage_minutes:
+            values["rem_pct"] = stage_minutes["REM"] / minutes_asleep * 100.0
+
+    return ParsedPoint(local_end.date(), values)
 
 
-def _waso_minutes(stages: object) -> float | None:
-    """Sum AWAKE stages lying strictly between the first and last non-awake stage."""
-    if not isinstance(stages, list) or not stages:
-        return None
-
-    asleep_indices = [
-        index
-        for index, stage in enumerate(stages)
-        if isinstance(stage, dict) and stage.get("stage") in ASLEEP_STAGES
-    ]
-    if not asleep_indices:
-        return None
-
-    first, last = asleep_indices[0], asleep_indices[-1]
-    total = 0.0
-    for stage in stages[first : last + 1]:
-        if not isinstance(stage, dict) or stage.get("stage") != "AWAKE":
+def _stage_minutes(stages_summary: object) -> dict[str, float]:
+    minutes_by_stage: dict[str, float] = {}
+    if not isinstance(stages_summary, list):
+        return minutes_by_stage
+    for entry in stages_summary:
+        if not isinstance(entry, dict):
             continue
-        start_time = stage.get("startTime")
-        end_time = stage.get("endTime")
-        if not isinstance(start_time, str) or not isinstance(end_time, str):
-            continue
-        total += (parse_timestamp(end_time) - parse_timestamp(start_time)).total_seconds() / 60.0
-    return total
+        stage_type = entry.get("type")
+        minutes = parse_double(entry.get("minutes"))
+        if isinstance(stage_type, str) and minutes is not None:
+            minutes_by_stage[stage_type] = minutes_by_stage.get(stage_type, 0.0) + minutes
+    return minutes_by_stage

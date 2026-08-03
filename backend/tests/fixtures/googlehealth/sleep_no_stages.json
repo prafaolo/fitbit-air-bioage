@@ -3,12 +3,25 @@
     {
       "name": "users/me/dataTypes/sleep/dataPoints/n2",
       "sleep": {
-        "session": {
+        "type": "STAGES",
+        "interval": {
           "startTime": "2026-06-01T23:30:00Z",
-          "endTime": "2026-06-02T06:30:00Z"
+          "endTime": "2026-06-02T06:30:00Z",
+          "startUtcOffset": "0s",
+          "endUtcOffset": "0s"
         },
-        "sleepMetadata": {"stagesState": "STAGES_UNAVAILABLE"},
-        "sleepSummary": {"totalDuration": "25200s"}
+        "metadata": {
+          "mainSleep": true,
+          "processed": true,
+          "stagesStatus": "FAILED"
+        },
+        "summary": {
+          "minutesAsleep": "415",
+          "minutesAwake": "5",
+          "minutesInSleepPeriod": "420",
+          "minutesToFallAsleep": "0",
+          "minutesAfterWakeUp": "0"
+        }
       }
     }
   ]

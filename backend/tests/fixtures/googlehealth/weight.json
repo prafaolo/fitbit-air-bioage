@@ -1,0 +1,32 @@
+{
+  "dataPoints": [
+    {
+      "name": "users/me/dataTypes/weight/dataPoints/w1",
+      "weight": {
+        "sampleTime": {
+          "civilTime": {
+            "date": {"year": 2026, "month": 7, "day": 8},
+            "time": {"hours": 8, "minutes": 29}
+          },
+          "utcOffset": "7140s",
+          "physicalTime": "2026-07-08T06:30:00Z"
+        },
+        "weightGrams": 88000
+      }
+    },
+    {
+      "name": "users/me/dataTypes/weight/dataPoints/w2",
+      "weight": {
+        "sampleTime": {
+          "civilTime": {
+            "date": {"year": 2026, "month": 6, "day": 16},
+            "time": {"hours": 22, "minutes": 31, "seconds": 14, "nanos": 54206000}
+          },
+          "utcOffset": "7200s",
+          "physicalTime": "2026-06-16T20:31:14.054206Z"
+        },
+        "weightGrams": 87000
+      }
+    }
+  ]
+}
